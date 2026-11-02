@@ -99,8 +99,95 @@ export interface ActionCard {
   alsoConsidered?: string
   /** "We earned ₹0 on this." Always zero. */
   earned: 0
-  /** What this card adds to "Found this year" once done (SPEC 6). Absent = does not count. */
+  /**
+   * What this card adds to "Found this year" once done (SPEC 6). Only done cards count.
+   * complete() keeps a declared value; when absent it sets it from a positive impact
+   * (scope 'family' for member-consent cards). Set { amount: 0 } to opt out.
+   */
   found?: { amount: Rupees; scope: 'self' | 'family' }
+
+  /* ----- Item 3 additions (all optional) ----- */
+
+  /** Money that moves, for the receipt and the ledger (e.g. ₹3,00,000 for card A) */
+  amount?: Rupees
+  /** Parts of a multi-line card (the ESOP split, the salary chores) */
+  lines?: ActionLine[]
+  /** When it runs, in words (SPEC 1.2), e.g. "Units by Fri 30 Oct (ordered before the 3 pm cut-off)" */
+  when?: string
+  /** Display override for the approval, e.g. "Tap to start; signature at the insurer" */
+  approvalDetail?: string
+  /** Autopilot rule this card runs under (approval 'none'); the rule's name is the approver */
+  ruleId?: string
+  /** Set on approval: "Nikhil", the rule name, or the member's name */
+  approvedBy?: string
+  approvedVia?: ApprovalVia
+  approvedAt?: ISODateTime
+  /** Approved but waits for this time before its hold starts; shown as Scheduled */
+  scheduledFor?: ISODateTime
+  /** Demo-clock time the hold started; the run is stamped holdStartedAt + holdMinutes */
+  holdStartedAt?: ISODateTime
+  /** Scripted receipt and extra done-timeline lines, used when the card completes */
+  receiptPlan?: ReceiptPlan
+  /** Timeline line when cancelled, e.g. "Kept in HDFC. I'll ask next month." */
+  cancelNote?: string
+  /** Demo (SPEC 9.5): the run fails with this instead of completing; Retry then completes */
+  scriptedFailure?: { reason: string; retryAt: ISODateTime }
+}
+
+/* ---------- Item 3: action card system ---------- */
+
+/** How an approval was given: a tap, the UPI PIN sheet, the member's OTP, or an Autopilot rule */
+export type ApprovalVia = 'tap' | 'pin' | 'member' | 'rule'
+
+/** One part of a multi-part card */
+export interface ActionLine {
+  label: string
+  amount?: Rupees
+  /** e.g. "Takes your emergency fund to ₹4.5 L, six months of spending." */
+  note?: string
+  /** This line's own second-order note */
+  alsoConsidered?: string
+}
+
+/** What the receipt says when the card completes */
+export interface ReceiptPlan {
+  /** What ran (defaults to the card title) */
+  what?: string
+  /** Bank, RTA or BBPS reference (defaults to one derived from the card id) */
+  reference?: string
+  /** Extra timeline lines added before "Done", e.g. "Prepayment done · SBI ref 8821" */
+  timeline?: string[]
+}
+
+/** What a moment passes to proposeAction: the card minus what the system fills in */
+export type ActionDraft = Omit<ActionCard, 'status' | 'timeline' | 'receipts' | 'earned' | 'createdAt' | 'holdMinutes'> & {
+  /** Defaults to 10 for Autopilot cards (approval 'none'), else 0 (tap and PIN run after 1.5 s) */
+  holdMinutes?: number
+  createdAt?: ISODateTime
+  timeline?: TimelineEntry[]
+}
+
+/** Optional overrides when a card completes */
+export interface CompleteInput {
+  what?: string
+  reference?: string
+  found?: ActionCard['found']
+}
+
+/** A member's OTP approval waiting on their phone */
+export interface MemberRequest {
+  actionId: string
+  memberId?: string
+}
+
+export type ToastTone = 'info' | 'success' | 'warning' | 'error'
+
+export interface ToastItem {
+  id: string
+  text: string
+  tone: ToastTone
+  /** 0 = stays until dismissed */
+  durationMs: number
 }
 
 /* ---------- SPEC 4: Rule (Autopilot) ---------- */

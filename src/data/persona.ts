@@ -1,6 +1,6 @@
 /*
   Persona data (SPEC section 2). Parts only: every total is computed in derived.ts.
-  Snapshot: 30 Oct 2026, 9:14 am IST (a Friday; the spec labels it Thu, from the 2025 calendar).
+  Snapshot: Thu 29 Oct 2026, 9:14 am IST (2026 calendar; see SPEC section 0).
 */
 import type {
   BankAccount,
@@ -19,7 +19,7 @@ import type {
   Wallet,
 } from '../types'
 
-export const AS_OF: ISODateTime = '2026-10-30T09:14:00+05:30'
+export const AS_OF: ISODateTime = '2026-10-29T09:14:00+05:30'
 
 /* ---------- Nikhil ---------- */
 
@@ -48,12 +48,23 @@ export const people = {
 export const buffer = { accountId: 'hdfc', amount: 100_000 as Rupees }
 
 /** Monthly spending, about ₹75,000. "Other" is the remainder after the named categories. */
+/** Subscriptions found in Gmail (declared before monthlySpend because Subscriptions is computed from them). */
+export const subscriptions: Subscription[] = [
+  { id: 'netflix', name: 'Netflix', monthly: 649, sourceId: 'gmail' },
+  { id: 'spotify', name: 'Spotify', monthly: 119, sourceId: 'gmail' },
+  { id: 'cult', name: 'Cult', monthly: 1_650, unusedFor: '11 weeks', sourceId: 'gmail' },
+  { id: 'notion', name: 'Notion', monthly: 800, unusedFor: '3 months', sourceId: 'gmail' },
+]
+export const SUBSCRIPTIONS_MONTHLY: Rupees = subscriptions.reduce((t, x) => t + x.monthly, 0)
+export const MONTHLY_SPEND_TOTAL: Rupees = 75_000
+const NAMED_SPEND = 32_000 + 14_000 + 6_000 + SUBSCRIPTIONS_MONTHLY
+
 export const monthlySpend: SpendCategory[] = [
   { id: 'rent', label: 'Rent', monthly: 32_000 },
   { id: 'food', label: 'Food and quick commerce', monthly: 14_000 },
   { id: 'travel', label: 'Travel', monthly: 6_000 },
-  { id: 'subscriptions', label: 'Subscriptions', monthly: 2_400 },
-  { id: 'other', label: 'Other', monthly: 20_600 },
+  { id: 'subscriptions', label: 'Subscriptions', monthly: SUBSCRIPTIONS_MONTHLY },
+  { id: 'other', label: 'Other', monthly: MONTHLY_SPEND_TOTAL - NAMED_SPEND },
 ]
 
 /* ---------- Rates used in the maths ---------- */
@@ -109,7 +120,7 @@ export const banks: BankAccount[] = [
 export const cards: CreditCard[] = [
   { id: 'regalia', issuer: 'HDFC', name: 'HDFC Regalia', mask: '3310', statement: 48_600, due: '2026-11-09', sourceId: 'gmail', asOf: AS_OF },
   { id: 'magnus', issuer: 'Axis', name: 'Axis Magnus', mask: '7752', statement: 31_200, due: '2026-11-12', sourceId: 'gmail', asOf: AS_OF },
-  { id: 'amex', issuer: 'Amex', name: 'Amex Platinum Travel', mask: '2004', statement: 12_900, due: '2026-11-15', sourceId: 'gmail', asOf: AS_OF },
+  { id: 'amex', issuer: 'Amex', name: 'Amex Platinum Travel', mask: '2004', statement: 12_900, due: '2026-11-16', sourceId: 'gmail', asOf: AS_OF },
 ]
 
 /* ---------- Mutual funds (AA via the RTAs) ---------- */
@@ -204,7 +215,7 @@ export const esop = {
   buybackPrice: 1_000,
   /** Perquisite tax withheld at source */
   perquisiteTaxRate: 0.2,
-  landsOn: '2026-11-04' as ISODate,
+  landsOn: '2026-11-03' as ISODate,
   sourceId: 'gmail',
   asOf: AS_OF,
 }
@@ -286,22 +297,15 @@ export const wallets: Wallet[] = [
 
 /* ---------- Subscriptions (found in Gmail) ---------- */
 
-export const subscriptions: Subscription[] = [
-  { id: 'netflix', name: 'Netflix', monthly: 649, sourceId: 'gmail' },
-  { id: 'spotify', name: 'Spotify', monthly: 119, sourceId: 'gmail' },
-  { id: 'cult', name: 'Cult', monthly: 1_650, unusedFor: '11 weeks', sourceId: 'gmail' },
-  { id: 'notion', name: 'Notion', monthly: 800, unusedFor: '3 months', sourceId: 'gmail' },
-]
-
 /* ---------- Data sources (SPEC 4) ---------- */
 
-const CONSENT_12M: ISODate = '2027-10-30'
+const CONSENT_12M: ISODate = '2027-10-29'
 
 export const dataSources: DataSource[] = [
   { id: 'aa-hdfc', name: 'HDFC', via: 'Account Aggregator', covers: 'Salary account', freshness: AS_OF, consentExpiry: CONSENT_12M },
   { id: 'aa-icici', name: 'ICICI', via: 'Account Aggregator', covers: 'Savings account', freshness: AS_OF, consentExpiry: CONSENT_12M },
   // Older consent from when this account was linked elsewhere; drives the "expires in 9 days" edge state (SPEC 9.5)
-  { id: 'aa-kotak', name: 'Kotak', via: 'Account Aggregator', covers: 'Savings account', freshness: AS_OF, consentExpiry: '2026-11-21' },
+  { id: 'aa-kotak', name: 'Kotak', via: 'Account Aggregator', covers: 'Savings account', freshness: AS_OF, consentExpiry: '2026-11-07' },
   { id: 'aa-cams', name: 'CAMS', via: 'Account Aggregator', covers: 'Mutual funds', freshness: AS_OF, consentExpiry: CONSENT_12M },
   { id: 'aa-kfintech', name: 'KFintech', via: 'Account Aggregator', covers: 'Mutual funds', freshness: AS_OF, consentExpiry: CONSENT_12M },
   { id: 'aa-cdsl', name: 'CDSL', via: 'Account Aggregator', covers: 'Stocks (Zerodha)', freshness: AS_OF, consentExpiry: CONSENT_12M },
@@ -327,7 +331,7 @@ export const suresh = {
     bank: 'SBI',
     principal: 800_000 as Rupees,
     rate: 0.065,
-    maturesOn: '2026-11-14' as ISODate,
+    maturesOn: '2026-11-13' as ISODate,
     autoRenew: true,
     sourceId: 'aa-sbi-suresh',
   },
