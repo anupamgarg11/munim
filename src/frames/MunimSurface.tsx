@@ -1,5 +1,6 @@
-import type { ComponentType } from 'react'
+import { useState, type ComponentType } from 'react'
 import { PauseCircle } from 'lucide-react'
+import { SheetHostContext } from '../components/BottomSheet'
 import { TopBar } from '../components/TopBar'
 import { TabBar } from '../components/TabBar'
 import { PinSheetHost } from '../components/PinSheet'
@@ -26,31 +27,36 @@ const SCREENS: Record<Tab, ComponentType> = {
   The Munim app: top bar, the current tab's screen, bottom tab bar. Before connecting (moment
   0 and 1), the onboarding. The app's own overlays are mounted here once, inside the app frame
   (the phone frame on a laptop, the full width on a phone), never in a chat bubble: the UPI PIN
-  sheet and the toasts.
+  sheet, the toasts, and the host the screens portal their sheets into. Every sheet covers this
+  root (position: relative), so none can spill onto the WhatsApp frame or the commentary panel.
 */
 export function MunimSurface({ wide = false }: { wide?: boolean }) {
   const tab = useMunim((s) => s.tab)
   const onboarding = useShowOnboarding()
   const Screen = SCREENS[tab]
+  const [sheetHost, setSheetHost] = useState<HTMLDivElement | null>(null)
   return (
-    <div className="relative flex h-full min-h-0 flex-col bg-bg">
-      {onboarding ? (
-        <Onboarding wide={wide} />
-      ) : (
-        <>
-          <TopBar />
-          <KillSwitchStrip />
-          <main className="no-scrollbar min-h-0 flex-1 overflow-y-auto">
-            <div key={tab} className={`animate-fade-in mx-auto flex flex-col gap-3 px-4 py-4 ${wide ? 'max-w-[720px]' : ''}`}>
-              <Screen />
-            </div>
-          </main>
-          <TabBar />
-        </>
-      )}
-      <ToastHost />
-      <PinSheetHost />
-    </div>
+    <SheetHostContext value={sheetHost}>
+      <div className="relative flex h-full min-h-0 flex-col bg-bg">
+        {onboarding ? (
+          <Onboarding wide={wide} />
+        ) : (
+          <>
+            <TopBar />
+            <KillSwitchStrip />
+            <main className="no-scrollbar min-h-0 flex-1 overflow-y-auto">
+              <div key={tab} className={`animate-fade-in mx-auto flex flex-col gap-3 px-4 py-4 ${wide ? 'max-w-[720px]' : ''}`}>
+                <Screen />
+              </div>
+            </main>
+            <TabBar />
+          </>
+        )}
+        <ToastHost />
+        <div ref={setSheetHost} className="m-sheet-host" />
+        <PinSheetHost />
+      </div>
+    </SheetHostContext>
   )
 }
 

@@ -151,6 +151,75 @@ body {
   animation: munim-fade-in var(--dur-slide) ease-out both;
 }
 
+/*
+  Bottom sheets (components/BottomSheet.tsx): the UPI PIN pad, the commentary, the screen
+  sheets and Dad's consent page share this one container. Plain CSS with literal colours, so
+  the layout never depends on a utility class being generated. The layer covers its nearest
+  positioned parent (inside the phone frame on a laptop) and clips the panel to it. The panel
+  is opaque from its first frame: its enter motion moves it, never fades it.
+*/
+.m-sheet-host {
+  display: contents;
+}
+.m-sheet-layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  overflow: hidden;
+  overflow: clip;
+  pointer-events: auto;
+}
+.m-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(15, 23, 42, 0.45);
+}
+.m-sheet-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 480px;
+  max-height: 85%;
+  overflow: hidden;
+  background-color: #ffffff;
+  color: var(--m-ink);
+  opacity: 1;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 24px rgb(15 23 42 / 0.16);
+  padding-bottom: var(--safe-bottom, 0px);
+  animation: m-sheet-up 180ms ease-out;
+}
+.m-sheet-panel:focus-visible {
+  outline: none;
+}
+.m-sheet-handle {
+  flex: none;
+  width: 36px;
+  height: 4px;
+  margin: 8px auto 6px;
+  border-radius: 9999px;
+  background-color: #cbd5e1;
+}
+.m-sheet-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+@keyframes m-sheet-up {
+  from {
+    transform: translateY(24px);
+  }
+  to {
+    transform: none;
+  }
+}
+
 /* Reduced motion: collapse every animation and transition */
 @media (prefers-reduced-motion: reduce) {
   *,

@@ -117,16 +117,4 @@
   visibility: visible;
   transition: visibility 0s linear 0s;
 }
-
-/* OTP sheet rising over Suresh's chat */
-@keyframes wa-sheet-up {
-  from {
-    transform: translateY(100%);
-  }
-  to {
-    transform: none;
-  }
-}
-.wa-sheet {
-  animation: wa-sheet-up 220ms ease-out both;
-}
+/* Dad's consent page uses the shared bottom sheet (index.css, .m-sheet-*). */

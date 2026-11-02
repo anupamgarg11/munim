@@ -23,6 +23,7 @@ import {
 } from '../chat/ui/ChatParts'
 import type { ConsentRequestMessage, Message } from '../types'
 import { CommentaryButton } from '../components/CommentarySheet'
+import { BottomSheet } from '../components/BottomSheet'
 import '../chat/chat.css'
 
 /*
@@ -190,7 +191,7 @@ function ConsentBubble({ m, tail, onOpen }: { m: ConsentRequestMessage; tail: bo
 const AUTO_OTP = '482916'
 const AUTO_DIGIT_MS = 140
 
-function ConsentSheet({ m, auto = false, onClose, onApproved }: { m: ConsentRequestMessage; auto?: boolean; onClose: () => void; onApproved: () => void }) {
+export function ConsentSheet({ m, auto = false, onClose, onApproved }: { m: ConsentRequestMessage; auto?: boolean; onClose: () => void; onApproved: () => void }) {
   const [otp, setOtp] = useState('')
   const [approved, setApproved] = useState(false)
   const fd = Boolean(m.actionId)
@@ -244,77 +245,68 @@ function ConsentSheet({ m, auto = false, onClose, onApproved }: { m: ConsentRequ
       ]
   const titleId = `consent-sheet-${m.id}`
 
+  // The same sheet container as the app's (BottomSheet): backdrop, white panel, handle, own scroll.
+  // Focus opens on the OTP field (the sheet always opens on the form).
   return (
-    <div className="absolute inset-0 z-20 flex flex-col justify-end bg-black/40" onClick={onClose}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.key === 'Escape' && onClose()}
-        className="wa-sheet overflow-hidden rounded-t-[20px] bg-white text-ink"
-        style={{ paddingBottom: 'var(--safe-bottom, 0px)' }}
-      >
-        <div className="flex items-center justify-between bg-[#1E3A5F] px-4 py-2.5 text-white">
-          <p className="flex items-center gap-1.5 text-[13px] font-semibold">
-            <Lock size={14} aria-hidden="true" />
-            <span lang="en">{fd ? s.bankHeader : s.aaHeader}</span>
-            <span className="font-normal text-white/80">· {s.secure}</span>
-          </p>
-          <button type="button" onClick={onClose} aria-label={s.close} className="on-dark rounded-full p-1 hover:bg-white/10">
-            <X size={18} aria-hidden="true" />
-          </button>
-        </div>
-
-        {approved ? (
-          <div role="status" className="flex flex-col items-center gap-2 px-6 py-10 text-center">
-            <CircleCheck size={44} aria-hidden="true" className="text-accent" />
-            <p className="text-[18px] font-semibold">{s.approved}</p>
-          </div>
-        ) : (
-          <form onSubmit={submit} className="px-4 pb-4 pt-3">
-            <h2 id={titleId} className="text-[17px] font-semibold">
-              {fd ? s.fdTitle : s.aaTitle}
-            </h2>
-            <dl className="mt-2 divide-y divide-line rounded-[10px] border border-line text-[13.5px]">
-              {rows.map((r) => (
-                <div key={r.label} className="flex justify-between gap-3 px-3 py-2">
-                  <dt className="shrink-0 text-muted">{r.label}</dt>
-                  <dd className="num text-right font-medium">{r.value}</dd>
-                </div>
-              ))}
-            </dl>
-            {!fd && <p className="mt-2 text-[12.5px] text-muted">{s.revoke}</p>}
-
-            <label className="mt-3 block">
-              <span className="text-[13.5px] font-semibold">{s.otpLabel}</span>
-              <input
-                type="text"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                pattern="[0-9]{6}"
-                maxLength={6}
-                autoFocus
-                value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                className="num mt-1 block w-full rounded-[10px] border border-line bg-bg px-3 py-2.5 text-center text-[22px] font-semibold tracking-[0.5em] text-ink focus:border-[#1E3A5F]"
-                aria-describedby={`${titleId}-hint`}
-              />
-            </label>
-            <p id={`${titleId}-hint`} className="mt-1 text-[12.5px] text-muted">
-              {fd ? s.otpHintBank : s.otpHintAa}
-            </p>
-
-            <button
-              type="submit"
-              disabled={!ready}
-              className="mt-3 w-full rounded-button bg-[#1E3A5F] py-3 text-[15px] font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              {s.approve}
-            </button>
-          </form>
-        )}
+    <BottomSheet onClose={onClose} labelledBy={approved ? undefined : titleId} label={s.approved} focusSelector="input">
+      <div className="flex items-center justify-between bg-[#1E3A5F] px-4 py-2.5 text-white">
+        <p className="flex items-center gap-1.5 text-[13px] font-semibold">
+          <Lock size={14} aria-hidden="true" />
+          <span lang="en">{fd ? s.bankHeader : s.aaHeader}</span>
+          <span className="font-normal text-white/80">· {s.secure}</span>
+        </p>
+        <button type="button" onClick={onClose} aria-label={s.close} className="on-dark rounded-full p-1 hover:bg-white/10">
+          <X size={18} aria-hidden="true" />
+        </button>
       </div>
-    </div>
+
+      {approved ? (
+        <div role="status" className="flex flex-col items-center gap-2 px-6 py-10 text-center">
+          <CircleCheck size={44} aria-hidden="true" className="text-accent" />
+          <p className="text-[18px] font-semibold">{s.approved}</p>
+        </div>
+      ) : (
+        <form onSubmit={submit} className="px-4 pb-4 pt-3">
+          <h2 id={titleId} className="text-[17px] font-semibold">
+            {fd ? s.fdTitle : s.aaTitle}
+          </h2>
+          <dl className="mt-2 divide-y divide-line rounded-[10px] border border-line text-[13.5px]">
+            {rows.map((r) => (
+              <div key={r.label} className="flex justify-between gap-3 px-3 py-2">
+                <dt className="shrink-0 text-muted">{r.label}</dt>
+                <dd className="num text-right font-medium">{r.value}</dd>
+              </div>
+            ))}
+          </dl>
+          {!fd && <p className="mt-2 text-[12.5px] text-muted">{s.revoke}</p>}
+
+          <label className="mt-3 block">
+            <span className="text-[13.5px] font-semibold">{s.otpLabel}</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              value={otp}
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              className="num mt-1 block w-full rounded-[10px] border border-line bg-bg px-3 py-2.5 text-center text-[22px] font-semibold tracking-[0.5em] text-ink focus:border-[#1E3A5F]"
+              aria-describedby={`${titleId}-hint`}
+            />
+          </label>
+          <p id={`${titleId}-hint`} className="mt-1 text-[12.5px] text-muted">
+            {fd ? s.otpHintBank : s.otpHintAa}
+          </p>
+
+          <button
+            type="submit"
+            disabled={!ready}
+            className="mt-3 w-full rounded-button bg-[#1E3A5F] py-3 text-[15px] font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            {s.approve}
+          </button>
+        </form>
+      )}
+    </BottomSheet>
   )
 }

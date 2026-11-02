@@ -8,9 +8,9 @@ import { ScreenLayer } from './ScreenLayer'
 import { ScreenButton } from './ScreenParts'
 
 /*
-  Wraps every app screen: the overlay layer first (the screen's open sheet), then either the
-  screen or, after "Delete everything", the blank state. Toasts and the UPI PIN sheet are
-  mounted once for the whole app, in MunimSurface.
+  Wraps every app screen: the screen's open sheet (portalled into MunimSurface's sheet host, so
+  it covers the whole app surface), then either the screen or, after "Delete everything", the
+  blank state. Toasts and the UPI PIN sheet are mounted once for the whole app, in MunimSurface.
 */
 export function ScreenShell({ children, overlay }: { children: ReactNode; overlay?: ReactNode }) {
   const deleted = useUi((s) => s.deleted)

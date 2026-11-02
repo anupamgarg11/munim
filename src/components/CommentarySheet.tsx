@@ -1,10 +1,11 @@
-import { useEffect, useId, useRef } from 'react'
+import { useId } from 'react'
 import { Info, X } from 'lucide-react'
 import { useMunim } from '../store'
 import { commentary, demoBar } from '../copy/shell'
 import { commentaryLabels } from '../copy/moments'
 import { commentaryFor } from '../demo/moments'
 import { LAPTOP_QUERY, useMediaQuery } from '../lib/useMediaQuery'
+import { BottomSheet } from './BottomSheet'
 
 /*
   Phone layout (SPEC 3): the commentary is an "i" button in the Munim top bar and the
@@ -33,41 +34,19 @@ export function CommentaryButton({ tone }: { tone: 'light' | 'dark' }) {
   )
 }
 
-/** The bottom sheet. Its parent must be position: relative (it covers the parent). */
+/** The bottom sheet. Its parent must be position: relative (it covers the parent; see BottomSheet). */
 export function CommentarySheet() {
   const open = useMunim((s) => s.commentaryOpen)
   const setOpen = useMunim((s) => s.setCommentaryOpen)
   const moment = useMunim((s) => s.moment)
   const lines = commentaryFor(moment)
   const titleId = useId()
-  const panelRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const prev = document.activeElement as HTMLElement | null
-    panelRef.current?.querySelector<HTMLElement>('button')?.focus()
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('keydown', onKey)
-      prev?.focus?.()
-    }
-  }, [open, setOpen])
 
   if (!open) return null
+  const close = () => setOpen(false)
   return (
-    <div className="absolute inset-0 z-[60] flex flex-col justify-end bg-ink/40" onClick={() => setOpen(false)}>
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        onClick={(e) => e.stopPropagation()}
-        className="animate-fade-in max-h-[80%] w-full overflow-y-auto rounded-t-card bg-card px-4 pb-5 pt-4 shadow-device"
-        style={{ paddingBottom: 'calc(20px + var(--safe-bottom, 0px))' }}
-      >
+    <BottomSheet onClose={close} labelledBy={titleId} zIndex={60}>
+      <div className="px-4 pb-5 pt-1">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted">{commentary.title}</p>
@@ -77,7 +56,7 @@ export function CommentarySheet() {
           </div>
           <button
             type="button"
-            onClick={() => setOpen(false)}
+            onClick={close}
             aria-label={commentary.hide}
             className="-mr-1 -mt-1 shrink-0 rounded-button p-1.5 text-muted hover:bg-bg hover:text-ink"
           >
@@ -97,6 +76,6 @@ export function CommentarySheet() {
           <p className="mt-3 text-sm leading-relaxed text-muted">{moment === 0 ? commentary.placeholder : commentaryLabels.empty}</p>
         )}
       </div>
-    </div>
+    </BottomSheet>
   )
 }
