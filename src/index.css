@@ -1,0 +1,166 @@
+@import "tailwindcss";
+
+/*
+  Design tokens (SPEC section 8). Raw values live here as CSS variables;
+  @theme inline below maps them to Tailwind utilities (bg-surface, text-ink, ...).
+*/
+:root {
+  /* Munim app, light theme */
+  --m-bg: #f6f7f9;
+  --m-card: #ffffff;
+  --m-ink: #0f172a;
+  --m-muted: #64748b;
+  --m-accent: #0b6e4f;
+  --m-accent-soft: #e6f4ee;
+  --m-positive: #15803d;
+  --m-negative: #b91c1c;
+  --m-warning: #b45309;
+  --m-line: #e2e8f0;
+
+  /* WhatsApp frame */
+  --wa-header: #075e54;
+  --wa-chat: #ece5dd;
+  --wa-bubble-in: #ffffff;
+  --wa-bubble-out: #dcf8c6;
+  --wa-link: #027eb5;
+
+  /* Demo stage around the frames (not part of the product) */
+  --stage: #e9ecef;
+  --stage-ink: #0f172a;
+  --device: #111318;
+
+  /* Shape and depth */
+  --m-radius-card: 16px;
+  --m-radius-button: 12px;
+  --m-shadow-soft: 0 1px 2px rgb(15 23 42 / 0.04), 0 4px 16px rgb(15 23 42 / 0.06);
+  --m-shadow-device: 0 24px 48px rgb(15 23 42 / 0.18), 0 2px 6px rgb(15 23 42 / 0.12);
+
+  /* Motion (SPEC 8: nothing longer than 2 s) */
+  --dur-slide: 150ms;
+  --dur-typing: 1.2s;
+  --dur-reveal: 2s;
+
+  /* Type */
+  --m-font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --m-font-deva: "Noto Sans Devanagari", "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-bg: var(--m-bg);
+  --color-card: var(--m-card);
+  --color-ink: var(--m-ink);
+  --color-muted: var(--m-muted);
+  --color-accent: var(--m-accent);
+  --color-accent-soft: var(--m-accent-soft);
+  --color-positive: var(--m-positive);
+  --color-negative: var(--m-negative);
+  --color-warning: var(--m-warning);
+  --color-line: var(--m-line);
+
+  --color-wa-header: var(--wa-header);
+  --color-wa-chat: var(--wa-chat);
+  --color-wa-in: var(--wa-bubble-in);
+  --color-wa-out: var(--wa-bubble-out);
+  --color-wa-link: var(--wa-link);
+
+  --color-stage: var(--stage);
+  --color-device: var(--device);
+
+  --radius-card: var(--m-radius-card);
+  --radius-button: var(--m-radius-button);
+  --shadow-soft: var(--m-shadow-soft);
+  --shadow-device: var(--m-shadow-device);
+
+  --font-sans: var(--m-font-sans);
+  --font-deva: var(--m-font-deva);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--stage);
+  color: var(--m-ink);
+  font-family: var(--m-font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* All amounts use tabular numerals. Apply .num (or Tailwind's tabular-nums) to any figure. */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* Hindi copy (Suresh's frame) */
+.deva,
+:lang(hi) {
+  font-family: var(--m-font-deva);
+}
+
+/* Focus: visible ring for keyboard users only */
+:focus {
+  outline: none;
+}
+:focus-visible {
+  outline: 2px solid var(--m-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.on-dark :focus-visible,
+.on-dark:focus-visible {
+  outline-color: #ffffff;
+}
+
+/* WhatsApp chat wallpaper: flat #ECE5DD with a faint dot pattern */
+.wa-wallpaper {
+  background-color: var(--wa-chat);
+  background-image:
+    radial-gradient(rgb(0 0 0 / 0.035) 1px, transparent 1.2px),
+    radial-gradient(rgb(0 0 0 / 0.025) 1px, transparent 1.2px);
+  background-size: 22px 22px, 22px 22px;
+  background-position: 0 0, 11px 11px;
+}
+
+/* Hide scrollbars inside the phone frames while keeping scroll */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes munim-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-fade-in {
+  animation: munim-fade-in var(--dur-slide) ease-out both;
+}
+
+/* Reduced motion: collapse every animation and transition */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+}
