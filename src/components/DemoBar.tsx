@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Compass, FastForward, RotateCcw, type LucideIcon } from 'lucide-react'
 import { useMunim } from '../store'
-import { demoBar, LAST_MOMENT } from '../copy/shell'
+import { demoBar } from '../copy/shell'
+import { back, hasNext, next, reset, skipWait } from '../demo/runner'
 
 interface Props {
   variant: 'laptop' | 'phone'
@@ -9,13 +10,13 @@ interface Props {
 }
 
 /*
-  Demo bar shell. Buttons only move the store's moment for now; moment playback,
-  holds and free-explore behaviour arrive in later items.
+  Demo bar. Back, Next and Reset drive the demo runner (src/demo/runner.ts); Skip wait runs
+  every held card now and is live only while something is held; Free explore lifts the
+  onboarding gate so every tab works at any moment.
 */
 export function DemoBar({ variant, collapsed = false, onCollapsedChange }: Props) {
   const moment = useMunim((s) => s.moment)
-  const setMoment = useMunim((s) => s.setMoment)
-  const reset = useMunim((s) => s.reset)
+  const anyHeld = useMunim((s) => s.actions.some((a) => a.status === 'held'))
   const freeExplore = useMunim((s) => s.freeExplore)
   const setFreeExplore = useMunim((s) => s.setFreeExplore)
   const phone = variant === 'phone'
@@ -37,10 +38,10 @@ export function DemoBar({ variant, collapsed = false, onCollapsedChange }: Props
   }
 
   const buttons: { key: string; label: string; icon: LucideIcon; onClick?: () => void; disabled?: boolean; pressed?: boolean; primary?: boolean; title?: string }[] = [
-    { key: 'back', label: demoBar.back, icon: ChevronLeft, onClick: () => setMoment(moment - 1), disabled: moment === 0 },
-    { key: 'next', label: demoBar.next, icon: ChevronRight, onClick: () => setMoment(moment + 1), disabled: moment === LAST_MOMENT, primary: true },
-    { key: 'reset', label: demoBar.reset, icon: RotateCcw, onClick: reset },
-    { key: 'skip', label: demoBar.skipWait, icon: FastForward, disabled: true, title: demoBar.skipWaitIdle },
+    { key: 'back', label: demoBar.back, icon: ChevronLeft, onClick: () => void back(), disabled: moment === 0 },
+    { key: 'next', label: demoBar.next, icon: ChevronRight, onClick: () => void next(), disabled: !hasNext(moment), primary: true },
+    { key: 'reset', label: demoBar.reset, icon: RotateCcw, onClick: () => void reset() },
+    { key: 'skip', label: demoBar.skipWait, icon: FastForward, onClick: skipWait, disabled: !anyHeld, title: anyHeld ? undefined : demoBar.skipWaitIdle },
     { key: 'free', label: demoBar.freeExplore, icon: Compass, onClick: () => setFreeExplore(!freeExplore), pressed: freeExplore },
   ]
 

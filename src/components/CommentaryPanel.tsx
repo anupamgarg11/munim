@@ -1,12 +1,15 @@
 import { PanelRightClose, PanelRightOpen } from 'lucide-react'
 import { useMunim } from '../store'
 import { commentary, demoBar } from '../copy/shell'
+import { commentaryLabels } from '../copy/moments'
+import { commentaryFor } from '../demo/moments'
 
-/** Laptop right column. Collapses to a narrow rail. Content per moment arrives later. */
+/** Laptop right column: the current moment's principle, edge case and metric (SPEC 7). Collapses to a narrow rail. */
 export function CommentaryPanel() {
   const open = useMunim((s) => s.commentaryOpen)
   const setOpen = useMunim((s) => s.setCommentaryOpen)
   const moment = useMunim((s) => s.moment)
+  const lines = commentaryFor(moment)
 
   if (!open) {
     return (
@@ -43,7 +46,18 @@ export function CommentaryPanel() {
           </button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-          <p className="text-sm leading-relaxed text-muted">{commentary.placeholder}</p>
+          {lines ? (
+            <dl key={moment} className="animate-fade-in flex flex-col gap-4">
+              {(['principle', 'edge', 'metric'] as const).map((k) => (
+                <div key={k}>
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-accent">{commentaryLabels[k]}</dt>
+                  <dd className="mt-1 text-sm leading-relaxed text-ink">{lines[k]}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <p className="text-sm leading-relaxed text-muted">{moment === 0 ? commentary.placeholder : commentaryLabels.empty}</p>
+          )}
         </div>
       </div>
     </aside>

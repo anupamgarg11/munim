@@ -7,6 +7,7 @@ import { MoneyScreen } from '../screens/Money'
 import { ActionsScreen } from '../screens/Actions'
 import { RulesScreen } from '../screens/Rules'
 import { TrustScreen } from '../screens/Trust'
+import { Onboarding, useShowOnboarding } from '../demo/Onboarding'
 import type { Tab } from '../types'
 
 const SCREENS: Record<Tab, ComponentType> = {
@@ -17,10 +18,12 @@ const SCREENS: Record<Tab, ComponentType> = {
   trust: TrustScreen,
 }
 
-/** The Munim app: top bar, the current tab's screen, bottom tab bar. */
+/** The Munim app: top bar, the current tab's screen, bottom tab bar. Before connecting (moment 0 and 1), the onboarding. */
 export function MunimSurface({ wide = false }: { wide?: boolean }) {
   const tab = useMunim((s) => s.tab)
+  const onboarding = useShowOnboarding()
   const Screen = SCREENS[tab]
+  if (onboarding) return <Onboarding wide={wide} />
   return (
     <div className="flex h-full min-h-0 flex-col bg-bg">
       <TopBar />

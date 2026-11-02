@@ -5,7 +5,7 @@ import { ScreenButton, ScreenCard, ScreenFact, ScreenSection } from '../componen
 import { moneyCopy } from '../copy/screens'
 import { fmtAsOf, fmtDate, fmtINR } from '../lib/format'
 import { useMunim } from '../store'
-import { holdingDetail, relatedActions, sourceLabel } from './selectors'
+import { holdingDetail, relatedActions, sourceLabel, usePersona } from './selectors'
 import { openTrustData, useUi, type HoldingRef } from './uiStore'
 
 /** SPEC 9.3: a holding's detail, inside the Money tab: source, freshness, related actions. */
@@ -13,13 +13,14 @@ export function MoneyDetail({ holding }: { holding: HoldingRef }) {
   const actions = useMunim((s) => s.actions)
   const close = useUi((s) => s.closeHolding)
   const renewed = useUi((s) => s.renewedConsents)
+  const persona = usePersona()
   const ref = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {
     ref.current?.closest('main')?.scrollTo({ top: 0 })
   }, [holding])
 
-  const d = holdingDetail(holding)
+  const d = holdingDetail(holding, persona)
   const back = (
     <button type="button" onClick={close} className="-ml-1 flex items-center gap-0.5 self-start rounded-button py-1 pr-2 text-sm font-medium text-accent hover:underline">
       <ChevronLeft size={18} aria-hidden="true" />

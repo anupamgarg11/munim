@@ -27,6 +27,18 @@ import { fmtAsOf, fmtDate, fmtINR, fmtLakh, fmtPct, fmtTime } from '../src/lib/f
 import * as A from '../src/lib/actions'
 import { useMunim } from '../src/store'
 import type { ActionCard, ActionDraft, LedgerEntry } from '../src/types'
+// Item 4: the live persona and how balances move
+import {
+  LIQUID_FUND_ID,
+  applyEffects,
+  basePersona,
+  fundValue,
+  selectEsopSplit,
+  selectLiquid,
+  selectSweep,
+} from '../src/data/derived'
+import { diwaliBudget } from '../src/screens/screenData'
+import type { Effect } from '../src/types'
 
 let passed = 0
 let failed = 0
@@ -510,6 +522,152 @@ section('Store: approve, hold, cancel, skip wait, run, done (real timers)')
   st().reset()
   check('Reset clears actions, ledger and counter', `${st().actions.length},${st().ledger.length},${st().foundThisYear}`, '0,0,0')
   check('Reset clears toasts', st().toasts.length, 0)
+  st().stopHoldTicker()
+}
+
+/* ---------- Item 4: balances move with the story (SPEC 9.3, 5.2 to 5.4) ---------- */
+section('Live persona: effects (SPEC 9.3)')
+{
+  const T = '2026-10-29T09:16:00+05:30'
+  const hdfcOf = (p: typeof P) => p.banks.find((b) => b.id === 'hdfc')!.balance
+  const base = basePersona()
+  const CARD_A = 300_000
+  const cardA: Effect[] = [
+    { target: 'account', id: 'hdfc', delta: -CARD_A },
+    { target: 'liquid', delta: CARD_A },
+  ]
+  const afterA = applyEffects(base, cardA, T)
+  const liquid = afterA.funds.find((f) => f.id === LIQUID_FUND_ID)
+  check('Card A: HDFC = 2,18,400', hdfcOf(afterA), 218_400)
+  check('Card A: liquid fund created at 3,00,000', liquid ? fundValue(liquid) : 0, 300_000)
+  check('Card A: liquid fund is ICICI Liquid Direct, direct plan', `${liquid?.name}, ${liquid?.plan}`, 'ICICI Liquid Direct, direct')
+  check('Card A: net worth unchanged (a transfer) = 31,86,000', selectNetWorth(afterA).total, 3_186_000)
+  check('Card A: idle above buffer = 1,18,400', selectIdleAboveBuffer(afterA), 118_400)
+  check('Card A: AS_OF moves to the change', afterA.AS_OF, T)
+  check('Snapshot untouched (pure)', hdfcOf(P), 518_400)
+
+  const salaryAt = '2026-10-30T00:14:00+05:30'
+  const afterSalary = applyEffects(afterA, [{ target: 'account', id: 'hdfc', delta: P.profile.monthlyNetCredit }], salaryAt)
+  check('Salary credit raises HDFC by 2,38,000', hdfcOf(afterSalary) - hdfcOf(afterA), 238_000)
+  check('Salary credit raises net worth by 2,38,000', selectNetWorth(afterSalary).total - selectNetWorth(afterA).total, 238_000)
+
+  const sweep = selectSweep(afterSalary, { diwali: diwaliBudget.amount })
+  check('Sweep from the live persona: HDFC after salary = 4,56,400', sweep.balance, 456_400)
+  check('Sweep: commitments = 2,54,100', sweep.committed, 254_100)
+  check('Sweep: spare = 1,02,300', sweep.spare, 102_300)
+  check('Sweep: moves 1,00,000', sweep.amount, 100_000)
+  const skippedA = selectSweep(applyEffects(base, [{ target: 'account', id: 'hdfc', delta: P.profile.monthlyNetCredit }], salaryAt), { diwali: diwaliBudget.amount })
+  check('Sweep with card A skipped is simply larger (4,00,000)', skippedA.amount, 400_000)
+  const afterSweep = applyEffects(afterSalary, [{ target: 'account', id: 'hdfc', delta: -sweep.amount }, { target: 'liquid', delta: sweep.amount }], salaryAt)
+  check('After the sweep: liquid = 4,00,000', selectLiquid(afterSweep), 400_000)
+
+  const esopAt = '2026-11-03T10:40:00+05:30'
+  const afterEsop = applyEffects(afterSweep, [{ target: 'account', id: 'hdfc', delta: esop.net }], esopAt)
+  const split = selectEsopSplit(afterEsop, {
+    prepay: 200_000,
+    loanId: 'sbi-edu',
+    emergencyMonths: 6,
+    tranches: 3,
+    split: [
+      { fundId: 'ppfas', share: 0.5 },
+      { fundId: 'uti-nifty', share: 0.35 },
+      { fundId: 'mirae-midcap', share: 0.15 },
+    ],
+  })
+  check('Split: prepay 2,00,000', split.prepay, 200_000)
+  check('Split: liquid top-up = 50,000', split.topUp, 50_000)
+  check('Split: rest = 3,90,000', split.rest, 390_000)
+  check('Split: three tranches of 1,30,000', split.tranches.join(','), '130000,130000,130000')
+  check('Split: tranche 1 by fund 65,000 / 45,500 / 19,500', split.byFund(130_000).map((f) => f.amount).join(','), '65000,45500,19500')
+  check('Split: interest saved = 18,400', split.interestSaved, 18_400)
+  const t1 = split.byFund(split.tranches[0])
+  const afterSplit = applyEffects(
+    afterEsop,
+    [
+      { target: 'loan', id: 'sbi-edu', delta: -split.prepay },
+      { target: 'account', id: 'hdfc', delta: -(split.prepay + split.topUp + split.tranches[0]) },
+      { target: 'liquid', delta: split.topUp },
+      ...t1.map((f) => ({ target: 'fund', id: f.fundId, delta: f.amount }) as Effect),
+    ],
+    esopAt,
+  )
+  check('After moment 4: loan = 4,80,000', selectLoans(afterSplit), 480_000)
+  check('After moment 4: months left shorten in proportion (34)', afterSplit.loans[0].monthsLeft, 34)
+  check('After moment 4: liquid = 4,50,000 (six months of spending)', selectLiquid(afterSplit), 450_000)
+  check('After moment 4: HDFC = 6,16,400 (tranches 2 and 3 wait there)', hdfcOf(afterSplit), 616_400)
+  check('After moment 4: net worth = 40,64,000', selectNetWorth(afterSplit).total, 4_064_000)
+  check('After moment 4: Mirae still 38,000 below cost', -fundGain(afterSplit.funds.find((f) => f.id === 'mirae-midcap')!), 38_000)
+
+  const fall = applyEffects(base, [{ target: 'stocks', delta: -Math.round(selectInvestments(base).stocks * 0.06) }], esopAt)
+  check('Stocks move pro rata and still sum (4,06,080)', selectInvestments(fall).stocks, 406_080)
+  const sold = applyEffects(base, [{ target: 'fund', id: 'mirae-midcap', delta: -148_000 }], esopAt)
+  check('Selling a whole fund removes it', sold.funds.some((f) => f.id === 'mirae-midcap'), false)
+  const bought = applyEffects(base, [{ target: 'fund', id: 'new-midcap', delta: 148_000, name: 'New Midcap Direct' }], esopAt)
+  check('A purchase into a new id creates a direct fund', bought.funds.find((f) => f.id === 'new-midcap')?.name, 'New Midcap Direct')
+  check('Unknown ids change nothing', applyEffects(base, [{ target: 'account', id: 'nope', delta: 1 }], esopAt), base)
+}
+
+section('Store: the live persona moves with completed cards')
+{
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+  const st = () => useMunim.getState()
+  const hdfc = () => st().persona.banks.find((b) => b.id === 'hdfc')!.balance
+  st().reset()
+  check('Store starts at the snapshot (HDFC 5,18,400)', hdfc(), 518_400)
+  check('Store starts with four Autopilot rules', st().rules.length, 4)
+  st().setClock('2026-10-29T09:16:00+05:30')
+  st().proposeAction(
+    draft('live-a', {
+      approval: 'pin',
+      amount: 300_000,
+      impact: { amount: 11_400, per: 'year' },
+      effects: [
+        { target: 'account', id: 'hdfc', delta: -300_000 },
+        { target: 'liquid', delta: 300_000 },
+      ],
+    }),
+  )
+  st().approveAction('live-a', 'pin')
+  check('Effects wait until the card is done', hdfc(), 518_400)
+  await sleep(A.RUN_MS + 300)
+  check('Card done: HDFC = 2,18,400', hdfc(), 218_400)
+  check('Card done: liquid = 3,00,000', selectLiquid(st().persona), 300_000)
+  check('Card done: logged once', st().balanceLog.length, 1)
+  st().completeAction('live-a')
+  check('Completing again changes nothing', hdfc(), 218_400)
+  const after = st().applyEffects([{ target: 'account', id: 'hdfc', delta: 238_000 }], 'Salary')
+  check('store.applyEffects returns and keeps the new persona', after.banks.find((b) => b.id === 'hdfc')!.balance, 456_400)
+
+  // A card bill scheduled under its rule runs when the clock passes its date.
+  st().setClock('2026-10-30T00:14:00+05:30')
+  st().proposeAction(
+    draft('live-bill', {
+      type: 'pay',
+      approval: 'none',
+      ruleId: 'pay-cards',
+      amount: 48_600,
+      scheduledFor: '2026-11-09T09:00:00+05:30',
+      effects: [
+        { target: 'card', id: 'regalia', delta: -48_600 },
+        { target: 'account', id: 'hdfc', delta: -48_600 },
+      ],
+    }),
+  )
+  st().approveAction('live-bill', 'rule')
+  st().runDueActions()
+  check('Bill waits for its date', st().actions.find((a) => a.id === 'live-bill')?.status, 'approved')
+  st().setClock('2026-11-09T20:05:00+05:30')
+  st().runDueActions()
+  const bill = st().actions.find((a) => a.id === 'live-bill')!
+  check('On its date the bill runs and completes', bill.status, 'done')
+  check('It ran after its 10 minute hold (9:10 am)', bill.receipts[0]?.at, '2026-11-09T09:10:00+05:30')
+  check('Card dues drop by the bill', selectCardDues(st().persona), 92_700 - 48_600)
+  check('HDFC drops by the bill', hdfc(), 456_400 - 48_600)
+  check("The rule's last run is the bill's run", st().rules.find((r) => r.id === 'pay-cards')?.lastRun, '2026-11-09T09:10:00+05:30')
+
+  st().reset()
+  check('Reset restores the snapshot persona', hdfc(), 518_400)
+  check('Reset clears the balance log', st().balanceLog.length, 0)
   st().stopHoldTicker()
 }
 

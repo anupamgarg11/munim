@@ -6,18 +6,26 @@
     "Found this year" recomputed whenever actions change (it is never set directly).
   - Small UI state other items share: the deep-link highlight, the PIN sheet, a member's
     pending OTP request, and toasts.
+  - Item 4: a live copy of the persona that moves with the story (SPEC 9.3). A card's
+    effects are applied the moment it becomes done (whichever path got it there: the 1.5 s
+    run, completeAction, Skip wait, runDueActions, or an upsert of a done card); story events
+    (salary, the buyback) call applyEffects. reset() restores the snapshot. Screens read it
+    through usePersona() in screens/selectors.ts. setActions (bulk) applies no effects.
 */
 import { create } from 'zustand'
-import { computeFound } from './data/derived'
+import { applyEffects as applyPersonaEffects, basePersona, computeFound, type PersonaData } from './data/derived'
 import { AS_OF, people } from './data/persona'
 import * as A from './lib/actions'
 import { approvers, timeline as timelineCopy } from './copy/cards'
+import { defaultRules } from './demo/rules'
 import type {
   ActionCard,
   ActionDraft,
   ApprovalVia,
+  BalanceEvent,
   CentreView,
   CompleteInput,
+  Effect,
   ISODateTime,
   LedgerEntry,
   Member,
@@ -62,6 +70,14 @@ export interface MunimData {
   /** A member's OTP approval waiting on their phone; the WhatsApp frame can flip to them */
   memberRequest: MemberRequest | null
   toasts: ToastItem[]
+
+  /* ----- Item 4 ----- */
+  /** Live persona: starts as the snapshot in data/persona.ts, moves with completed cards and story events */
+  persona: PersonaData
+  /** Every change to the live persona, oldest first */
+  balanceLog: BalanceEvent[]
+  /** Onboarding (moment 1) is done: phone, OTP, AA consent, Gmail */
+  connected: boolean
 }
 
 export interface MunimSetters {
@@ -80,6 +96,8 @@ export interface MunimSetters {
   setKillSwitch: (on: boolean) => void
   /** Back to moment 0 with empty data; keeps layout choices (centre view, commentary) */
   reset: () => void
+  /** Item 4: onboarding finished (or skipped by the demo) */
+  setConnected: (connected: boolean) => void
 }
 
 export interface ToastOptions {
@@ -131,6 +149,21 @@ export interface MunimCardActions {
   clearMemberRequest: () => void
   showToast: (text: string, opts?: ToastOptions) => string
   dismissToast: (id: string) => void
+
+  /* ----- Item 4 ----- */
+  /**
+   * Apply effects to the live persona now (demo clock), e.g. the salary credit. Logs them
+   * with the note. Returns the new persona. Cards do not need this: their `effects` apply
+   * when they complete.
+   */
+  applyEffects: (effects: Effect[], note?: string) => PersonaData
+  /**
+   * Scheduled cards whose date has come (scheduledFor at or before the demo clock) run and
+   * complete now, stamped at their own time: held at scheduledFor, run after the hold.
+   * Autopilot cards stay put while the kill switch is on or their rule is off. The demo
+   * runner calls this after every clock move.
+   */
+  runDueActions: () => void
 }
 
 export type MunimState = MunimData & MunimSetters & MunimCardActions
@@ -146,9 +179,9 @@ export const initialData: MunimData = {
   centreView: 'phone',
   messages: [],
   actions: [],
-  rules: [],
   members: [],
   ledger: [],
+  rules: defaultRules,
   foundThisYear: 0,
   foundFamily: 0,
   killSwitch: false,
@@ -157,6 +190,9 @@ export const initialData: MunimData = {
   pinSheetActionId: null,
   memberRequest: null,
   toasts: [],
+  persona: basePersona(),
+  balanceLog: [],
+  connected: false,
 }
 
 /* Timers live outside the state: they are not data and must not re-render anything. */
@@ -171,17 +207,36 @@ const PEOPLE = people as Record<string, { name: string } | undefined>
 export const useMunim = create<MunimState>()((set, get) => {
   const find = (id: string) => get().actions.find((a) => a.id === id)
 
+  /** A card just became done: its effects move the live persona, and its rule records the run. */
+  const onDone = (s: MunimState, card: ActionCard): Partial<MunimData> => {
+    const at = card.receipts[card.receipts.length - 1]?.at ?? s.clock
+    const patch: Partial<MunimData> = {}
+    if (card.effects?.length) {
+      const persona = applyPersonaEffects(s.persona, card.effects, at)
+      if (persona !== s.persona) {
+        patch.persona = persona
+        patch.balanceLog = [...s.balanceLog, { at, note: card.title, actionId: card.id, effects: card.effects }]
+      }
+    }
+    if (card.ruleId && s.rules.some((r) => r.id === card.ruleId)) {
+      patch.rules = s.rules.map((r) => (r.id === card.ruleId ? { ...r, lastRun: at } : r))
+    }
+    return patch
+  }
+
   /** Write one card (insert or replace), recompute the counter, append a ledger entry. */
   const commit = (next: ActionCard, ledger?: LedgerEntry | null) => {
     const s = get()
-    const exists = s.actions.some((a) => a.id === next.id)
-    const actions = exists ? s.actions.map((a) => (a.id === next.id ? next : a)) : [...s.actions, next]
+    const prev = s.actions.find((a) => a.id === next.id)
+    const actions = prev ? s.actions.map((a) => (a.id === next.id ? next : a)) : [...s.actions, next]
     const found = computeFound(actions)
+    const completed = next.status === 'done' && prev?.status !== 'done'
     set({
       actions,
       foundThisYear: found.self,
       foundFamily: found.family,
       ...(ledger ? { ledger: [...s.ledger, ledger] } : {}),
+      ...(completed ? onDone(s, next) : {}),
     })
   }
 
@@ -308,6 +363,7 @@ export const useMunim = create<MunimState>()((set, get) => {
         commentaryOpen: s.commentaryOpen,
       }))
     },
+    setConnected: (connected) => set({ connected }),
 
     /* ---------- Action card system (item 3) ---------- */
     setClock: (clock) => set({ clock }),
@@ -456,6 +512,39 @@ export const useMunim = create<MunimState>()((set, get) => {
       if (t) clearTimeout(t)
       toastTimers.delete(id)
       set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) }))
+    },
+
+    /* ---------- Item 4: balances move with the story ---------- */
+    applyEffects: (effects, note) => {
+      const s = get()
+      const persona = applyPersonaEffects(s.persona, effects, s.clock)
+      if (persona !== s.persona) set({ persona, balanceLog: [...s.balanceLog, { at: s.clock, note, effects }] })
+      return get().persona
+    },
+
+    runDueActions: () => {
+      const { clock } = get()
+      const due = get()
+        .actions.filter((a) => a.status === 'approved' && a.scheduledFor !== undefined && !A.isAfter(a.scheduledFor, clock))
+        .sort((a, b) => (a.scheduledFor ?? '').localeCompare(b.scheduledFor ?? ''))
+      for (const a of due) {
+        const s = get()
+        const rule = s.rules.find((r) => r.id === a.ruleId)
+        if (a.approval === 'none' && (s.killSwitch || (rule && !rule.enabled))) continue
+        const at = a.scheduledFor!
+        const held = a.holdMinutes > 0 ? A.hold(a, Date.now(), at) : a
+        const running = A.run(held, A.runStamp(held, at))
+        if (running === held) continue
+        clearRunTimer(a.id)
+        const runAt = running.timeline[running.timeline.length - 1].at
+        if (running.scriptedFailure) {
+          const { reason, retryAt } = running.scriptedFailure
+          commit(A.fail(running, reason, retryAt, runAt))
+          continue
+        }
+        const { card: done, ledger } = A.complete(running, runAt)
+        commit(done, ledger)
+      }
     },
   }
 })

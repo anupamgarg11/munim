@@ -76,6 +76,8 @@ export interface ActionCard {
   id: string
   type: ActionType
   title: string
+  /** Applied to the live persona when the card completes (SPEC 9.3). Items 4 and 5 declare these. */
+  effects?: Effect[]
   /** One line, includes the number */
   why: string
   impact: Impact
@@ -381,6 +383,10 @@ export interface MutualFund {
   lots: FundLot[]
   sourceId: string
   asOf: ISODateTime
+  /** Item 4: 'liquid' marks the sweep target (created by the first 'liquid' effect) */
+  kind?: 'liquid'
+  /** Item 4: one line shown under the fund, e.g. "6.8% recent yield" */
+  note?: string
 }
 
 export interface Sip {
@@ -445,4 +451,52 @@ export interface SpendCategory {
   id: string
   label: string
   monthly: Rupees
+}
+
+/* ---------- Effects: how a completed action or a story event moves balances (SPEC 9.3) ---------- */
+
+/**
+ * target: which persona record the delta applies to.
+ *  'account'  id = bank account id (e.g. 'hdfc'); delta in rupees
+ *  'card'     id = card id; delta to the statement due (negative when paid)
+ *  'fund'     id = mutual fund id; delta to its value (a new direct fund may be created by the moment first)
+ *  'liquid'   the liquid fund (created on first positive delta); delta in rupees
+ *  'loan'     id = loan id; delta to outstanding (negative when prepaid)
+ *  'stocks'   delta to total stock value (market moves)
+ *  'member'   id = member account id (e.g. 'suresh-fd'); delta in rupees
+ *
+ * How derived.ts applyEffects reads them (item 4):
+ *  'fund' delta > 0 is a purchase: a new lot at cost (gain 0, newer than a year). An unknown id
+ *    creates a direct fund named `name` (else the id). delta < 0 is a price move: lots fall pro
+ *    rata and known gains fall with them. A delta of minus the whole value (or more) is a sale:
+ *    the fund is removed.
+ *  'liquid' creates "ICICI Liquid Direct" (direct, 6.8% note) on the first positive delta; it
+ *    is removed if it reaches zero.
+ *  'loan' also shortens months left in proportion (the EMI stays).
+ *  'stocks' scales every holding pro rata; the rounding remainder goes to the largest.
+ *  'member' ids: 'suresh-fd' (FD principal), 'suresh-sbi' (savings balance).
+ *  Every touched record's asOf, and the persona's AS_OF, move to the time of the change.
+ */
+export type EffectTarget = 'account' | 'card' | 'fund' | 'liquid' | 'loan' | 'stocks' | 'member'
+export interface Effect {
+  target: EffectTarget
+  id?: string
+  delta: Rupees
+  /** Optional one-line label for the ledger or timeline, e.g. "₹3,00,000 to ICICI Liquid Direct" */
+  label?: string
+  /** Item 4: 'fund' only. Name for a direct fund that a positive delta creates when the id is new. */
+  name?: string
+}
+
+/**
+ * Item 4: one application of effects to the live persona (a completed card, the salary
+ * credit, the buyback). Kept in the store's balanceLog, newest last.
+ */
+export interface BalanceEvent {
+  at: ISODateTime
+  /** e.g. "Salary from Orbit Labs", or the card's title */
+  note?: string
+  /** The card that caused it, when one did */
+  actionId?: string
+  effects: Effect[]
 }

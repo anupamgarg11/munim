@@ -12,7 +12,7 @@ import * as P from '../data/persona'
 import { fmtDate, fmtINR, fmtTime } from '../lib/format'
 import { useMunim } from '../store'
 import type { ActionCard, Message } from '../types'
-import { latestMunim, sameDay, upNext, weeklyBrief } from './selectors'
+import { latestMunim, sameDay, upNext, usePersona, weeklyBrief } from './selectors'
 import { openAction } from './uiStore'
 import { useActionStatusLine } from './useNow'
 import { impactText } from './ActionsRow'
@@ -44,6 +44,7 @@ export function HomeScreen() {
   const messages = useMunim((s) => s.messages)
   const actions = useMunim((s) => s.actions)
   const clock = useMunim((s) => s.clock)
+  const persona = usePersona()
 
   const byId = new Map(actions.map((a) => [a.id, a]))
   const latest = latestMunim(messages)
@@ -53,7 +54,7 @@ export function HomeScreen() {
   const brief =
     lastBrief && lastBrief.kind === 'brief'
       ? { when: homeCopy.briefWhen(fmtDate(lastBrief.at)), lines: lastBrief.lines }
-      : weeklyBrief()
+      : weeklyBrief(persona)
 
   return (
     <ScreenShell>

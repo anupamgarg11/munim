@@ -6,23 +6,22 @@ import { ScreenShell } from '../components/ScreenShell'
 import { ScreenButton, ScreenCallout, ScreenCard, ScreenSection, ScreenSubhead, ScreenTag } from '../components/ScreenParts'
 import { tabs } from '../copy/shell'
 import { common, moneyCopy } from '../copy/screens'
-import * as P from '../data/persona'
 import { fundGain, fundValue, selectEsop, selectInvestments, selectNetWorth } from '../data/derived'
 import { fmtAsOf, fmtDate, fmtINR, fmtLakh, fmtPct } from '../lib/format'
 import { MoneyDetail } from './MoneyDetail'
 import { CategorySheet, MoneySpending } from './MoneySpending'
 import type { SpendTxn } from './screenData'
-import { idleCallout, regularCostPerYear, sipFor, termLine } from './selectors'
+import { idleCallout, regularCostPerYear, sipFor, termLine, usePersona } from './selectors'
 import { openTrustData, useUi, type HoldingRef } from './uiStore'
-
-// Persona data is static, so the breakdowns are computed once.
-const nw = selectNetWorth()
-const inv = selectInvestments()
-const esop = selectEsop()
-const hdfc = P.banks.find((b) => b.id === P.buffer.accountId)
 
 /** SPEC 3.2 and 9.3: net worth, then Cash, Investments, Protection, Loans, Spending; every holding drills in. */
 export function MoneyScreen() {
+  // The live persona (item 4): balances move as cards complete and money lands.
+  const P = usePersona()
+  const nw = selectNetWorth(P)
+  const inv = selectInvestments(P)
+  const esop = selectEsop(P)
+  const hdfc = P.banks.find((b) => b.id === P.buffer.accountId)
   const detail = useUi((s) => s.moneyDetail)
   const openHolding = useUi((s) => s.openHolding)
   const savedScroll = useUi((s) => s.moneyScrollTop)
@@ -102,7 +101,7 @@ export function MoneyScreen() {
               ))}
             </ul>
           </ScreenCard>
-          {hdfc && hdfc.balance > P.buffer.amount && <ScreenCallout icon={<TriangleAlert size={16} />}>{idleCallout()}</ScreenCallout>}
+          {hdfc && hdfc.balance > P.buffer.amount && <ScreenCallout icon={<TriangleAlert size={16} />}>{idleCallout(P)}</ScreenCallout>}
         </ScreenSection>
 
         {/* Investments */}
@@ -112,10 +111,11 @@ export function MoneyScreen() {
             <ul className="divide-y divide-line">
               {P.funds.map((f) => {
                 const lines: { text: string; tone?: 'warning' | 'negative' }[] = []
-                if (f.plan === 'regular') lines.push({ text: moneyCopy.costsYou(fmtINR(regularCostPerYear(f.id))), tone: 'warning' })
+                if (f.plan === 'regular') lines.push({ text: moneyCopy.costsYou(fmtINR(regularCostPerYear(f.id, P))), tone: 'warning' })
                 if (fundGain(f) < 0) lines.push({ text: moneyCopy.belowCost(fmtINR(-fundGain(f))), tone: 'negative' })
-                const sip = sipFor(f.id)
+                const sip = sipFor(f.id, P)
                 if (sip) lines.push({ text: moneyCopy.sip(fmtINR(sip.amount), common.ordinal(sip.dayOfMonth)) })
+                if (f.note) lines.push({ text: f.note })
                 return (
                   <li key={f.id}>
                     <MoneyRow
@@ -169,7 +169,7 @@ export function MoneyScreen() {
                 const lines: { text: string; tone?: 'warning' }[] = []
                 if (p.premium && p.premiumDue) lines.push({ text: moneyCopy.premiumDue(fmtINR(p.premium), fmtDate(p.premiumDue)) })
                 else if (p.premium) lines.push({ text: moneyCopy.premiumYear(fmtINR(p.premium)) })
-                if (p.kind === 'term') lines.push({ text: termLine(), tone: 'warning' })
+                if (p.kind === 'term') lines.push({ text: termLine(P), tone: 'warning' })
                 return (
                   <li key={p.id}>
                     <MoneyRow

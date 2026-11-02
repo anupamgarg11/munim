@@ -1,8 +1,11 @@
 /*
   Computed values for the app screens. Everything here is derived from persona.ts,
   derived.ts, screenData.ts and the store; nothing is typed as a total.
+  Item 4: functions that read balances take the persona as their last argument (default:
+  the snapshot). Screens pass the live one from usePersona(), so numbers move with the story.
 */
 import * as P from '../data/persona'
+import { useMunim } from '../store'
 import {
   fundCost,
   fundGain,
@@ -17,6 +20,7 @@ import {
   selectSipsMonthly,
   selectSubscriptionsMonthly,
   sum,
+  type PersonaData,
 } from '../data/derived'
 import { fmtDate, fmtINR, fmtLakh, fmtPct, istParts, type DateInput } from '../lib/format'
 import { common, homeCopy, moneyCopy, sourceVia } from '../copy/screens'
@@ -71,6 +75,11 @@ export function clock(msLeft: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
 
+/* ---------- Live persona (item 4) ---------- */
+
+/** The live persona from the store: balances after every completed card and story event */
+export const usePersona = (): PersonaData => useMunim((s) => s.persona)
+
 /* ---------- Sources ---------- */
 
 export const sourceById = (id: string): DataSource | undefined => P.dataSources.find((s) => s.id === id)
@@ -81,30 +90,30 @@ export function sourceLabel(src: DataSource): string {
 
 /* ---------- Cash ---------- */
 
-export function idleCallout() {
-  const hdfc = P.banks.find((b) => b.id === P.buffer.accountId)
-  return moneyCopy.idleCallout(fmtLakh(selectIdleAboveBuffer()), fmtLakh(P.buffer.amount), fmtPct(hdfc?.interestRate ?? P.rates.savings))
+export function idleCallout(p: PersonaData = P) {
+  const hdfc = p.banks.find((b) => b.id === p.buffer.accountId)
+  return moneyCopy.idleCallout(fmtLakh(selectIdleAboveBuffer(p)), fmtLakh(p.buffer.amount), fmtPct(hdfc?.interestRate ?? p.rates.savings))
 }
 
 /* ---------- Funds ---------- */
 
 /** What a regular plan costs over its direct plan, a year (sums to the SPEC's ₹8,800) */
-export const regularCostPerYear = (fundId: string): Rupees => {
-  const f = P.funds.find((x) => x.id === fundId)
-  return f && f.plan === 'regular' ? Math.round(fundValue(f) * P.rates.regularOverDirect) : 0
+export const regularCostPerYear = (fundId: string, p: PersonaData = P): Rupees => {
+  const f = p.funds.find((x) => x.id === fundId)
+  return f && f.plan === 'regular' ? Math.round(fundValue(f) * p.rates.regularOverDirect) : 0
 }
 
-export const sipFor = (fundId: string) => P.sips.find((s) => s.fundId === fundId)
+export const sipFor = (fundId: string, p: PersonaData = P) => p.sips.find((s) => s.fundId === fundId)
 
 /* ---------- Protection ---------- */
 
 /** Term cover the income supports, rounded to the nearest crore (SPEC: about ₹4 Cr) */
-export function termShouldBe(): Rupees {
-  return Math.round((P.profile.ctc * termCoverIncomeMultiple) / CRORE) * CRORE
+export function termShouldBe(p: PersonaData = P): Rupees {
+  return Math.round((p.profile.ctc * termCoverIncomeMultiple) / CRORE) * CRORE
 }
 
-export function termLine(): string {
-  return moneyCopy.termShouldBe(fmtLakh(P.termSizedAtSalary), fmtLakh(P.profile.ctc), fmtLakh(termShouldBe()))
+export function termLine(p: PersonaData = P): string {
+  return moneyCopy.termShouldBe(fmtLakh(p.termSizedAtSalary), fmtLakh(p.profile.ctc), fmtLakh(termShouldBe(p)))
 }
 
 /* ---------- Spending ---------- */
@@ -193,19 +202,19 @@ export function relatedActions(actions: readonly ActionCard[], matchers: Matcher
 
 /* ---------- Home ---------- */
 
-export function weeklyBrief() {
-  const nw = selectNetWorth()
-  const hdfc = P.banks.find((b) => b.id === P.buffer.accountId)
-  const dues = [...P.cards].sort((a, b) => a.due.localeCompare(b.due))
-  const sipDay = P.sips[0]?.dayOfMonth ?? 5
+export function weeklyBrief(p: PersonaData = P) {
+  const nw = selectNetWorth(p)
+  const hdfc = p.banks.find((b) => b.id === p.buffer.accountId)
+  const dues = [...p.cards].sort((a, b) => a.due.localeCompare(b.due))
+  const sipDay = p.sips[0]?.dayOfMonth ?? 5
   return {
-    when: homeCopy.briefWhen(fmtDate(nextBriefAt(P.AS_OF))),
+    when: homeCopy.briefWhen(fmtDate(nextBriefAt(p.AS_OF))),
     lines: [
-      homeCopy.briefNetWorth(fmtLakh(nw.total), fmtDate(P.AS_OF)),
-      homeCopy.briefIdle(fmtLakh(selectIdleAboveBuffer()), fmtLakh(P.buffer.amount), fmtPct(hdfc?.interestRate ?? P.rates.savings)),
-      homeCopy.briefCards(dues.length, fmtINR(selectCardDues()), fmtDate(dues[0].due), fmtDate(dues[dues.length - 1].due)),
-      homeCopy.briefSips(fmtINR(selectSipsMonthly()), common.ordinal(sipDay)),
-      homeCopy.briefRegular(fmtINR(selectRegularPlans().dragPerYear)),
+      homeCopy.briefNetWorth(fmtLakh(nw.total), fmtDate(p.AS_OF)),
+      homeCopy.briefIdle(fmtLakh(selectIdleAboveBuffer(p)), fmtLakh(p.buffer.amount), fmtPct(hdfc?.interestRate ?? p.rates.savings)),
+      homeCopy.briefCards(dues.length, fmtINR(selectCardDues(p)), fmtDate(dues[0].due), fmtDate(dues[dues.length - 1].due)),
+      homeCopy.briefSips(fmtINR(selectSipsMonthly(p)), common.ordinal(sipDay)),
+      homeCopy.briefRegular(fmtINR(selectRegularPlans(p).dragPerYear)),
       homeCopy.briefNothing,
     ],
   }
@@ -245,20 +254,20 @@ export interface HoldingDetail {
 const F = moneyCopy.fact
 const V = moneyCopy.value
 
-export function holdingDetail(ref: HoldingRef): HoldingDetail | null {
+export function holdingDetail(ref: HoldingRef, p: PersonaData = P): HoldingDetail | null {
   const build = DETAIL[ref.kind]
-  return build(ref.id)
+  return build(ref.id, p)
 }
 
-const DETAIL: Record<HoldingKind, (id: string) => HoldingDetail | null> = {
-  bank: (id) => {
-    const b = P.banks.find((x) => x.id === id)
+const DETAIL: Record<HoldingKind, (id: string, p: PersonaData) => HoldingDetail | null> = {
+  bank: (id, p) => {
+    const b = p.banks.find((x) => x.id === id)
     if (!b) return null
-    const isBuffer = b.id === P.buffer.accountId
+    const isBuffer = b.id === p.buffer.accountId
     const facts: HoldingDetail['facts'] = []
     if (isBuffer) {
-      facts.push({ label: F.buffer, value: fmtINR(P.buffer.amount) })
-      facts.push({ label: F.aboveBuffer, value: fmtINR(selectIdleAboveBuffer()), tone: 'warning' })
+      facts.push({ label: F.buffer, value: fmtINR(p.buffer.amount) })
+      facts.push({ label: F.aboveBuffer, value: fmtINR(selectIdleAboveBuffer(p)), tone: 'warning' })
     }
     if (b.interestRate !== undefined) facts.push({ label: F.earns, value: V.perYear(fmtPct(b.interestRate)) })
     if (b.note) facts.push({ label: F.note, value: b.note })
@@ -275,8 +284,8 @@ const DETAIL: Record<HoldingKind, (id: string) => HoldingDetail | null> = {
     }
   },
 
-  card: (id) => {
-    const c = P.cards.find((x) => x.id === id)
+  card: (id, p) => {
+    const c = p.cards.find((x) => x.id === id)
     if (!c) return null
     return {
       title: c.name,
@@ -293,15 +302,15 @@ const DETAIL: Record<HoldingKind, (id: string) => HoldingDetail | null> = {
     }
   },
 
-  fund: (id) => {
-    const f = P.funds.find((x) => x.id === id)
+  fund: (id, p) => {
+    const f = p.funds.find((x) => x.id === id)
     if (!f) return null
     const facts: HoldingDetail['facts'] = [
       { label: F.plan, value: V.plan[f.plan] },
       { label: F.heldVia, value: f.heldVia },
     ]
     if (f.plan === 'regular') {
-      facts.push({ label: F.extraCost, value: V.perYear(fmtINR(regularCostPerYear(f.id))), tone: 'warning' })
+      facts.push({ label: F.extraCost, value: V.perYear(fmtINR(regularCostPerYear(f.id, p))), tone: 'warning' })
       const older = f.lots.filter((l) => l.olderThanYear === true)
       const newer = f.lots.filter((l) => l.olderThanYear === false)
       if (older.length) {
@@ -317,12 +326,15 @@ const DETAIL: Record<HoldingKind, (id: string) => HoldingDetail | null> = {
       const bought = f.lots.find((l) => l.bought)?.bought
       if (bought) facts.push({ label: F.bought, value: bought })
     }
-    const sip = sipFor(f.id)
+    const sip = sipFor(f.id, p)
     if (sip) facts.push({ label: F.sip, value: V.sip(fmtINR(sip.amount), common.ordinal(sip.dayOfMonth)) })
+    if (f.note) facts.push({ label: F.note, value: f.note })
     const name = f.name.split(' ').slice(0, 2).join(' ')
     const matchers: Matcher[] = [{ types: ['invest', 'harvest', 'switch'], words: [name] }]
     if (f.plan === 'regular') matchers.push({ types: ['switch'] })
     if (fundGain(f) < 0) matchers.push({ types: ['harvest'] })
+    // The liquid fund (item 4) is where the sweeps and the buyback top-up land.
+    if (f.kind === 'liquid') matchers.push({ types: ['sweep'] }, { words: [f.name] })
     return {
       title: f.name,
       subtitle: common.dot(V.plan[f.plan], f.heldVia),
@@ -334,45 +346,45 @@ const DETAIL: Record<HoldingKind, (id: string) => HoldingDetail | null> = {
     }
   },
 
-  stock: (id) => {
-    const h = P.stocks.holdings.find((x) => x.id === id)
+  stock: (id, p) => {
+    const h = p.stocks.holdings.find((x) => x.id === id)
     if (!h) return null
-    const total = selectInvestments().stocks
+    const total = selectInvestments(p).stocks
     return {
       title: h.name,
-      subtitle: P.stocks.broker,
+      subtitle: p.stocks.broker,
       amount: h.value,
       facts: [
-        { label: F.broker, value: P.stocks.broker },
+        { label: F.broker, value: p.stocks.broker },
         { label: F.shareOfStocks, value: V.share(fmtPct(h.value / total, 0)) },
       ],
-      source: sourceById(P.stocks.sourceId),
-      asOf: P.stocks.asOf,
-      matchers: [{ words: [h.name, P.stocks.broker] }],
+      source: sourceById(p.stocks.sourceId),
+      asOf: p.stocks.asOf,
+      matchers: [{ words: [h.name, p.stocks.broker] }],
     }
   },
 
-  nps: () => ({
-    title: moneyCopy.nps(P.nps.tier),
-    amount: P.nps.value,
-    facts: [{ label: F.tier, value: String(P.nps.tier) }],
-    source: sourceById(P.nps.sourceId),
-    asOf: P.nps.asOf,
+  nps: (_id, p) => ({
+    title: moneyCopy.nps(p.nps.tier),
+    amount: p.nps.value,
+    facts: [{ label: F.tier, value: String(p.nps.tier) }],
+    source: sourceById(p.nps.sourceId),
+    asOf: p.nps.asOf,
     matchers: [{ words: ['NPS'] }],
   }),
 
-  epf: () => ({
+  epf: (_id, p) => ({
     title: moneyCopy.epf,
-    amount: P.epf.value,
-    facts: [{ label: F.employer, value: P.profile.employer }],
-    source: sourceById(P.epf.sourceId),
-    asOf: P.epf.asOf,
+    amount: p.epf.value,
+    facts: [{ label: F.employer, value: p.profile.employer }],
+    source: sourceById(p.epf.sourceId),
+    asOf: p.epf.asOf,
     matchers: [{ words: ['EPF'] }],
   }),
 
-  esop: () => {
-    const e = selectEsop()
-    const x = P.esop
+  esop: (_id, p) => {
+    const e = selectEsop(p)
+    const x = p.esop
     return {
       title: moneyCopy.esop(x.company),
       subtitle: moneyCopy.esopVested(e.remainingUnits.toLocaleString('en-IN')),
@@ -392,8 +404,8 @@ const DETAIL: Record<HoldingKind, (id: string) => HoldingDetail | null> = {
     }
   },
 
-  loan: (id) => {
-    const l = P.loans.find((x) => x.id === id)
+  loan: (id, p) => {
+    const l = p.loans.find((x) => x.id === id)
     if (!l) return null
     return {
       title: `${l.lender} ${l.kind.charAt(0).toLowerCase()}${l.kind.slice(1)}`,
@@ -412,32 +424,32 @@ const DETAIL: Record<HoldingKind, (id: string) => HoldingDetail | null> = {
     }
   },
 
-  policy: (id) => {
-    const p = P.policies.find((x) => x.id === id)
-    if (!p) return null
+  policy: (id, p) => {
+    const pol = p.policies.find((x) => x.id === id)
+    if (!pol) return null
     const facts: HoldingDetail['facts'] = [
-      { label: F.cover, value: fmtLakh(p.cover) },
-      { label: F.covers, value: p.covers },
+      { label: F.cover, value: fmtLakh(pol.cover) },
+      { label: F.covers, value: pol.covers },
     ]
-    if (p.provider) facts.push({ label: F.provider, value: p.provider })
-    if (p.premium) facts.push({ label: F.premium, value: V.perYear(fmtINR(p.premium)) })
-    if (p.premiumDue) facts.push({ label: F.premiumDue, value: fmtDate(p.premiumDue) })
-    if (p.kind === 'term') facts.push({ label: F.shouldBe, value: V.aboutCover(fmtLakh(termShouldBe())), tone: 'warning' })
-    if (p.note) facts.push({ label: F.note, value: p.note })
+    if (pol.provider) facts.push({ label: F.provider, value: pol.provider })
+    if (pol.premium) facts.push({ label: F.premium, value: V.perYear(fmtINR(pol.premium)) })
+    if (pol.premiumDue) facts.push({ label: F.premiumDue, value: fmtDate(pol.premiumDue) })
+    if (pol.kind === 'term') facts.push({ label: F.shouldBe, value: V.aboutCover(fmtLakh(termShouldBe(p))), tone: 'warning' })
+    if (pol.note) facts.push({ label: F.note, value: pol.note })
     return {
-      title: p.name,
-      subtitle: moneyCopy.coverFor(p.covers),
-      amount: p.cover,
-      amountText: fmtLakh(p.cover),
+      title: pol.name,
+      subtitle: moneyCopy.coverFor(pol.covers),
+      amount: pol.cover,
+      amountText: fmtLakh(pol.cover),
       facts,
-      source: sourceById(p.sourceId),
-      asOf: p.asOf,
-      matchers: p.kind === 'term' ? [{ types: ['insure'] }, { words: ['term'] }] : [{ words: [p.name, 'floater', 'health cover'] }],
+      source: sourceById(pol.sourceId),
+      asOf: pol.asOf,
+      matchers: pol.kind === 'term' ? [{ types: ['insure'] }, { words: ['term'] }] : [{ words: [pol.name, 'floater', 'health cover'] }],
     }
   },
 
-  wallet: (id) => {
-    const w = P.wallets.find((x) => x.id === id)
+  wallet: (id, p) => {
+    const w = p.wallets.find((x) => x.id === id)
     if (!w) return null
     const src = sourceById(w.sourceId)
     return {
@@ -445,13 +457,13 @@ const DETAIL: Record<HoldingKind, (id: string) => HoldingDetail | null> = {
       amount: w.balance,
       facts: [{ label: F.topUps, value: V.reservePay(fmtINR(caps.reservePayMonthly)) }],
       source: src,
-      asOf: src?.freshness ?? P.AS_OF,
+      asOf: src?.freshness ?? p.AS_OF,
       matchers: [{ words: [w.name, 'wallet'] }],
     }
   },
 
-  subscription: (id) => {
-    const s = P.subscriptions.find((x) => x.id === id)
+  subscription: (id, p) => {
+    const s = p.subscriptions.find((x) => x.id === id)
     if (!s) return null
     const src = sourceById(s.sourceId)
     return {
@@ -464,7 +476,7 @@ const DETAIL: Record<HoldingKind, (id: string) => HoldingDetail | null> = {
         { label: F.lastUsed, value: s.unusedFor ? V.unused(s.unusedFor) : V.inUse, tone: s.unusedFor ? 'warning' : undefined },
       ],
       source: src,
-      asOf: src?.freshness ?? P.AS_OF,
+      asOf: src?.freshness ?? p.AS_OF,
       matchers: [{ words: [s.name, 'subscription'] }],
     }
   },
