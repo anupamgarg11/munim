@@ -284,6 +284,8 @@ export function ask(text: string, thread: ThreadId = 'nikhil'): Promise<boolean>
 export type ChipHandler = (ctx: { label: string; thread: ThreadId }) => void | ScriptStep[]
 
 const chipHandlers = new Map<string, ChipHandler>()
+/** Built-in behaviours (chat/bridge.ts); a handler set with setChipHandler always wins */
+const chipDefaults = new Map<string, ChipHandler>()
 const chipKey = (label: string) => label.trim().toLowerCase()
 
 /** Give a quick reply its own behaviour (e.g. "Invite Dad" flips to Suresh's phone). null removes it. */
@@ -292,10 +294,15 @@ export function setChipHandler(label: string, handler: ChipHandler | null) {
   else chipHandlers.delete(chipKey(label))
 }
 
+/** The chat's own fallback behaviour for a quick reply, used only when no handler is set */
+export function setDefaultChipHandler(label: string, handler: ChipHandler) {
+  chipDefaults.set(chipKey(label), handler)
+}
+
 /** A tapped quick reply: echoed as the person's message, then its handler, else the intent matcher. */
 export function tapChip(label: string, thread: ThreadId = 'nikhil'): Promise<boolean> {
   appendUserMessage(label, thread)
-  const handler = chipHandlers.get(chipKey(label))
+  const handler = chipHandlers.get(chipKey(label)) ?? chipDefaults.get(chipKey(label))
   if (!handler) return runIntentMatcher(label, thread).done
   const out = handler({ label, thread })
   return Array.isArray(out) ? play(out, { thread }) : Promise.resolve(true)

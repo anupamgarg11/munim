@@ -12,7 +12,7 @@ import { people } from '../data/persona'
 import { chatHi, relationName } from '../copy/chat'
 import { assumptions, facts } from './facts'
 import { useChat } from './chatStore'
-import { appendMessage, callStore, later, openInMunim, play, setChipHandler, showPhone } from './engine'
+import { appendMessage, callStore, later, openInMunim, play, setDefaultChipHandler, showPhone } from './engine'
 import type { ActionCard, ConsentRequestMessage, Member, Scope } from '../types'
 
 /* ---------- Card buttons ---------- */
@@ -98,7 +98,7 @@ useMunim.subscribe((s, prev) => {
 })
 
 // Default quick reply for the household moment; a moment can replace it with setChipHandler.
-setChipHandler('Invite Dad', () => inviteDad())
+setDefaultChipHandler('Invite Dad', () => inviteDad())
 
 /* ---------- Consent given ---------- */
 

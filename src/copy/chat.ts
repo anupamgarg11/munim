@@ -1,10 +1,10 @@
 /*
   Copy for the chat: the WhatsApp frames (Nikhil's in English, Suresh's in Hindi), the
   compact cards, and the scripted answers to free typing (SPEC 9.4).
-  Rules: plain words, no em or en dashes, no emoji, no "agentic". Every number arrives as an
+  Rules: plain words, no em or en dashes, no emoji, no jargon. Every number arrives as an
   argument computed from persona data (src/chat/facts.ts); none is typed here.
 */
-import { fmtINR, fmtLakh, fmtPct, fmtDate, fmtDateTime, istParts } from '../lib/format'
+import { fmtINR, fmtLakh, fmtPct, fmtDate, fmtDateTime, fmtTime, istParts } from '../lib/format'
 
 /* ---------- Nikhil's WhatsApp (English UI) ---------- */
 
@@ -63,7 +63,7 @@ export const card = {
     running: 'Approved · running',
     done: 'Done',
     cancelled: 'Cancelled. Nothing moved.',
-    failed: (reason: string, retryAt: string) => `${reason} Retrying ${fmtDateTime(retryAt)}. Nothing else affected.`,
+    failed: (reason: string, retryAt: string) => `${reason.replace(/[.;\s]+$/, '')}; retrying at ${fmtTime(retryAt)}. Nothing else affected.`,
   },
   receipt: {
     title: 'Done',
@@ -95,6 +95,8 @@ export const relationName: Record<string, string> = { father: 'Dad', mother: 'Mo
 export const chips = {
   starter: ['Can we buy a ₹14 L car in March?', 'Where can I save tax?', 'Am I insured enough?', 'How do you earn?'],
   whatIf: ['What if I lose my job?', 'What if markets fall 20%?', 'What if rates go up 1%?'],
+  marketFall: ['What if markets fall 20%?'],
+  family: ['Invite Dad'],
 }
 
 const L = (n: number, digits = 2) => fmtLakh(n, digits)
@@ -110,8 +112,6 @@ export const answers = {
   no: "No problem, I'll leave it and won't ask again this week. To stop something already held, tap Cancel on its card; to pause everything, use the switch at the top of Rules.",
 
   car: (v: {
-    price: number
-    stretch: boolean
     downNow: number
     loanNow: number
     rate: number
@@ -123,9 +123,29 @@ export const answers = {
     downLater: number
     emiLater: number
   }) => [
-    v.stretch ? `You can, but a ${L(v.price)} car is a stretch. Two ways:` : 'Yes, two ways.',
+    'Yes, two ways.',
     `A: buy in March. ${L(v.downNow)} down from the liquid fund and a ${L(v.loanNow)} loan at ${fmtPct(v.rate)} for ${v.years} years. EMI ${fmtINR(v.emiNow)}, and your ${v.goalYear} house down payment moves back ${v.goalDelayMonths} months.\nB: wait till ${v.waitUntil} and put ${L(v.downLater)} down. EMI ${fmtINR(v.emiLater)}, and your goals don't move.`,
     "I'd pick B unless the current car is costing you. Either way, I'd insure it direct and keep the emergency fund untouched.",
+  ],
+  carStretch: (v: {
+    price: number
+    downNow: number
+    loanNow: number
+    rate: number
+    years: number
+    emiNow: number
+    share: number
+    waitUntil: string
+    downLater: number
+    emiLater: number
+    goalYear: number
+    goalDelayMonths: number
+    emiShareCap: number
+    maxPrice: number
+  }) => [
+    `You can, but a ${L(v.price)} car is a stretch. ${L(v.downNow)} down and a ${L(v.loanNow)} loan at ${fmtPct(v.rate)} for ${v.years} years means an EMI of ${fmtINR(v.emiNow)}, ${fmtPct(v.share, 0)} of your take-home.`,
+    `Waiting till ${v.waitUntil} with ${L(v.downLater)} down only brings it to ${fmtINR(v.emiLater)}, and your ${v.goalYear} house down payment moves back about ${v.goalDelayMonths} months.`,
+    `I'd keep a car EMI within ${fmtPct(v.emiShareCap, 0)} of take-home, which means a car up to about ${L(v.maxPrice)}.`,
   ],
   carCash: (v: { price: number; setAside: number; from: string; readyBy: string }) => [
     `Yes, and you don't need a loan. Set aside ${fmtINR(v.setAside)} a month from ${v.from} and a ${L(v.price)} car is paid in cash by ${v.readyBy}.`,
@@ -222,6 +242,15 @@ export const answers = {
     "Your liquid fund would start earning more too. I'd keep prepaying the loan from windfalls, not from your SIPs.",
   ],
   whatIf: 'I can test any what-if against your numbers. Three that people ask most:',
+  whatIfMarketUp: (v: { rise: number; exposed: number; gain: number }) => [
+    `If markets rose ${fmtPct(v.rise, 0)}, your funds and stocks (${fmtINR(v.exposed)} today) would be up about ${fmtINR(v.gain)} on paper.`,
+    "I wouldn't chase it. Your SIPs carry on as they are, and I'd only move money if your mix drifts well away from your plan.",
+  ],
+  marketSteady: [
+    "Your plan doesn't change. Your SIPs buy more units at lower prices, your emergency fund isn't in the market, and your goals are 5 to 15 years out.",
+    "I'm not moving anything. Doing nothing is the advice here.",
+  ],
+
 
   netWorth: (v: { total: number; cash: number; invested: number; loans: number; cardDues: number; asOf: string }) => [
     `Your net worth is ${fmtINR(v.total)}: ${fmtINR(v.cash)} in cash and ${fmtINR(v.invested)} invested, minus the ${fmtINR(v.loans)} loan and ${fmtINR(v.cardDues)} of card bills.`,
@@ -235,6 +264,39 @@ export const answers = {
           `${v.unused.map((s) => `${s.name} (unused ${s.unusedFor})`).join(' and ')} cost ${fmtINR(v.unusedMonthly)} a month, ${fmtINR(v.unusedMonthly * 12)} a year. Worth cancelling.`,
         ]
       : []),
+  ],
+
+  salary: (v: { amount: number; bank: string }) => [
+    `Your salary, ${fmtINR(v.amount)}, lands in ${v.bank} on the last working day of the month.`,
+    "Autopilot waits for the credit, not a date, so a late salary never bounces a bill. Bills, SIPs and the sweep run after it lands; if your buffer would dip, the sweep skips and I tell you.",
+  ],
+
+  invest: (v: { amount?: number; target: number; loanRate: number; tranches: number; weeks: number; split: { name: string; share: number }[] }) => [
+    `${v.amount ? `For ${fmtINR(v.amount)}, here's the order I'd follow.` : "For a lump sum, here's the order I'd follow."} First, top up the emergency fund to ${fmtINR(v.target)}. Then, if you want a sure return, prepay the ${fmtPct(v.loanRate)} education loan.`,
+    `The rest goes into your direct funds in ${v.tranches} tranches over ${v.weeks} weeks: ${v.split.map((x) => `${fmtPct(x.share, 0)} ${x.name}`).join(', ')}. Not all at once; markets are near highs.`,
+  ],
+
+  gold: 'Gold: 5 to 10% of your investments in a gold ETF or fund is a reasonable hedge. You hold none today.',
+  crypto: "Crypto: I don't advise on it or buy it. It's outside what a SEBI-registered adviser covers, and gains are taxed at a flat 30%.",
+
+  stocks: (v: { broker: string; list: { name: string; value: number }[]; total: number; share: number }) => [
+    `Your ${v.broker} stocks: ${v.list.map((x) => `${x.name} ${fmtINR(x.value)}`).join(', ')}. That's ${fmtINR(v.total)} in all, ${fmtPct(v.share, 0)} of what you've invested.`,
+    "I don't pick stocks. I'll flag it if any one of them grows past 10% of your investments.",
+  ],
+
+  esop: (v: { company: string; units: number; vested: number; price: number; taxRate: number; net: number; landsOn: string; remainingUnits: number; remainingValue: number }) => [
+    `${v.company} is buying back ${v.units} of your ${v.vested.toLocaleString('en-IN')} vested options at ${fmtINR(v.price)}. After ${fmtPct(v.taxRate, 0)} perquisite tax withheld at source, ${fmtINR(v.net)} lands ${fmtDate(v.landsOn)}.`,
+    `The other ${v.remainingUnits} vested options are worth ${fmtINR(v.remainingValue)} at that price. I keep them out of your net worth until you can sell them.`,
+  ],
+
+  family: "I can look after your parents' money too. I'd only see what Dad approves, on his own phone and in Hindi, and he'd approve anything that moves his money.",
+
+  regulated:
+    "Munim runs as a fee-only SEBI-registered investment adviser, so it can't take commissions. Your data comes through Account Aggregator consent, and money moves on your bank's own rails: UPI, e-mandates and BBPS. In this prototype those registrations are assumed.",
+
+  goal: (v: { goalYear: number }) => [
+    `Any goal works the same way: an amount, a year, and a monthly set-aside that moves into a direct fund on salary day. Today you have one, the house down payment in ${v.goalYear}.`,
+    "Tell me the amount and the year, and I'll show the monthly figure and what it does to the house goal.",
   ],
 
   safety: [
@@ -318,7 +380,8 @@ export const chatHi = {
     },
     revoke: 'आप यह सहमति कभी भी वापस ले सकते हैं।',
     fdRows: (v: { principal: number; rate: number; maturesOn: string; senior: number; extra: number }) => [
-      { label: 'अभी की FD', value: `${fmtLakhHi(v.principal)}, ${fmtPct(v.rate)}, ${fmtDateHi(v.maturesOn)} को पूरी` },
+      { label: 'अभी की FD', value: `${fmtLakhHi(v.principal)}, ${fmtPct(v.rate)}` },
+      { label: 'पूरी होगी', value: fmtDateHi(v.maturesOn) },
       { label: 'नई FD', value: `सीनियर सिटीज़न FD, ${fmtPct(v.senior)}` },
       { label: 'फ़ायदा', value: `हर साल ${fmtINR(v.extra)} ज़्यादा` },
       { label: 'किसके नाम', value: 'आपके ही नाम पर' },

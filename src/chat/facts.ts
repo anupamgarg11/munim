@@ -6,6 +6,7 @@
 import * as P from '../data/persona'
 import {
   fundGain,
+  selectEsop,
   selectCardDues,
   selectCash,
   selectIdleAboveBuffer,
@@ -32,7 +33,11 @@ export const assumptions = {
     /** "Car fund" set-aside: ₹50,000 a month from December (month index 11) */
     setAside: 50_000,
     setAsideFromMonth: 11,
+    /** Above this share of take-home, a car EMI is a stretch */
+    emiShareCap: 0.2,
   },
+  /** SPEC 5.4: a lump sum goes in three tranches over six weeks, 50/35/15 across the direct funds */
+  invest: { tranches: 3, weeks: 6, split: [{ fundId: 'ppfas', share: 0.5 }, { fundId: 'uti-nifty', share: 0.35 }, { fundId: 'mirae-midcap', share: 0.15 }] },
   /** Home loan rule of thumb: EMI within 30% of take-home, 8.5% over 20 years, 20% down, about 7% stamp duty and registration */
   house: { emiShare: 0.3, rate: 0.085, years: 20, downShare: 0.2, stampShare: 0.07, goalYear: 2029 },
   /** Long-run return and inflation for the retirement projection */
@@ -138,6 +143,10 @@ export const facts = {
   subscriptionsUnused: P.subscriptions.filter((s) => s.unusedFor),
   suresh: P.suresh,
   sureshId: P.people.suresh.id,
+  salaryBank: P.banks.find((b) => b.id === P.profile.salaryAccountId)?.bank ?? 'your bank',
+  stocks: P.stocks,
+  esop: { ...P.esop, ...selectEsop() },
+  fundName: (id: string) => P.funds.find((f) => f.id === id)?.name ?? id,
 }
 
 export type Facts = typeof facts

@@ -97,6 +97,15 @@
 .wa-face-back {
   transform: rotateY(180deg);
 }
+/* After the flip, the hidden face is fully hidden (no stray paint, no scroll); during it both show */
+.wa-face[aria-hidden="true"] {
+  visibility: hidden;
+  transition: visibility 0s linear 700ms;
+}
+.wa-face[aria-hidden="false"] {
+  visibility: visible;
+  transition: visibility 0s linear 0s;
+}
 
 /* OTP sheet rising over Suresh's chat */
 @keyframes wa-sheet-up {

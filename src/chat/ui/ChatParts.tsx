@@ -43,7 +43,7 @@ export function ChatHeader({ name, avatar, status, verifiedLabel, onBack, backLa
           <BadgeCheck size={16} className="shrink-0 fill-[#25D366] text-white" aria-hidden="true" />
           <span className="sr-only">{verifiedLabel}</span>
         </p>
-        <p aria-live="polite" className="truncate text-[13px] text-white/85">
+        <p className="truncate text-[13px] text-white/85">
           {status}
         </p>
       </div>
@@ -227,7 +227,7 @@ export function Composer({ placeholder, inputLabel, sendLabel, onSend, lang }: C
 
   return (
     <form onSubmit={submit} className="flex shrink-0 items-end gap-1.5 px-1.5 pt-1" style={{ paddingBottom: 'calc(6px + var(--safe-bottom, 0px))' }}>
-      <label className="wa-bubble flex min-h-[44px] min-w-0 flex-1 cursor-text items-center gap-2 rounded-full bg-white pl-4 pr-3">
+      <label className="wa-bubble flex min-h-[44px] min-w-0 flex-1 cursor-text items-center gap-2 rounded-full bg-white pl-4 pr-3 focus-within:ring-2 focus-within:ring-[#128C7E]/60">
         <span className="sr-only">{inputLabel}</span>
         <input
           ref={inputRef}

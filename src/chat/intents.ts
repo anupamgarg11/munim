@@ -10,7 +10,7 @@
 import { useMunim } from '../store'
 import { answers, chips as chipSets } from '../copy/chat'
 import { istParts } from '../lib/format'
-import { assumptions as A, emi, facts as F, futureValue, loanForEmi, roundTo } from './facts'
+import { assumptions as A, emi, facts as F, floorTo, futureValue, loanForEmi, roundTo } from './facts'
 import { storyNow } from './chatStore'
 import type { ActionCard } from '../types'
 
@@ -20,6 +20,7 @@ export type IntentId =
   | 'what-if-job'
   | 'what-if-market'
   | 'what-if-rates'
+  | 'market'
   | 'car'
   | 'house'
   | 'retire'
@@ -29,9 +30,17 @@ export type IntentId =
   | 'emergency'
   | 'sip'
   | 'loan'
+  | 'salary'
+  | 'invest'
+  | 'gold-crypto'
+  | 'stocks'
+  | 'esop'
+  | 'family'
   | 'net-worth'
   | 'spending'
   | 'safety'
+  | 'regulated'
+  | 'goal'
   | 'what-if'
   | 'greeting'
   | 'help'
@@ -97,36 +106,59 @@ function car(t: string): IntentAnswer {
   const a = A.car
   const parsed = parseRupees(t)
   const price = parsed && parsed >= 100_000 && parsed <= 50_000_000 ? roundTo(parsed, 10_000) : a.defaultPrice
-  const card = pending((c) => c.type === 'plan' && /\bcar\b/i.test(c.title))
+  const actionId = pending((c) => c.type === 'plan' && /\bcar\b/i.test(c.title))
   if (price <= a.downLater) {
     const months = Math.ceil(price / a.setAside)
     return {
       id: 'car',
       lines: answers.carCash({ price, setAside: a.setAside, from: MONTHS[a.setAsideFromMonth], readyBy: MONTHS[(a.setAsideFromMonth + months - 1) % 12] }),
-      actionId: card,
+      actionId,
     }
   }
   const loanNow = price - a.downNow
-  const loanLater = price - a.downLater
   const emiNow = roundTo(emi(loanNow, a.rate, a.years), 100)
+  const emiLater = roundTo(emi(price - a.downLater, a.rate, a.years), 100)
+  // Anchored to the spec's default (₹11 L borrowed moves the 2029 goal 4 months), scaled by what is borrowed
+  const goalDelayMonths = Math.max(1, Math.round((a.goalDelayMonthsAtDefault * loanNow) / (a.defaultPrice - a.downNow)))
+  const share = emiNow / F.takeHome
+  if (share > a.emiShareCap) {
+    const maxPrice = floorTo(loanForEmi(F.takeHome * a.emiShareCap, a.rate, a.years) + a.downLater, 100_000)
+    return {
+      id: 'car',
+      lines: answers.carStretch({
+        price,
+        downNow: a.downNow,
+        loanNow,
+        rate: a.rate,
+        years: a.years,
+        emiNow,
+        share,
+        waitUntil: a.waitUntil,
+        downLater: a.downLater,
+        emiLater,
+        goalYear: a.goalYear,
+        goalDelayMonths,
+        emiShareCap: a.emiShareCap,
+        maxPrice,
+      }),
+      actionId,
+    }
+  }
   return {
     id: 'car',
     lines: answers.car({
-      price,
-      stretch: emiNow > F.takeHome * 0.2,
       downNow: a.downNow,
       loanNow,
       rate: a.rate,
       years: a.years,
       emiNow,
       goalYear: a.goalYear,
-      // Anchored to the spec's default (₹11 L borrowed moves the goal 4 months), scaled by what is borrowed
-      goalDelayMonths: Math.max(1, Math.round((a.goalDelayMonthsAtDefault * loanNow) / (a.defaultPrice - a.downNow))),
+      goalDelayMonths,
       waitUntil: a.waitUntil,
       downLater: a.downLater,
-      emiLater: roundTo(emi(loanLater, a.rate, a.years), 100),
+      emiLater,
     }),
-    actionId: card,
+    actionId,
   }
 }
 
@@ -369,6 +401,8 @@ const re = (r: RegExp) => (t: string) => r.test(t)
 
 const JOB = /\bjobs?\b|laid off|\blayoffs?\b|\bfired\b|\bquit\b|unemploy|sabbatical|salary (stops|stopped|doesn'?t come)|lose (my )?(salary|income)|no (salary|income)/
 const MARKET = /\bmarkets?\b|\bcrash|\bsensex\b|\bnifty\b|\bcorrection\b|\brecession\b|\bbear\b/
+const MARKET_UP = /\b(up|rise|rises|rose|rally|rallies|boom|booms|high|highs|double|doubles)\b/
+const MARKET_DOWN = /\b(down|fall|falls|fell|drop|drops|crash|crashes|tank|tanks|correction|bear)\b/
 const RATES = /\brates?\b|\binterest\b|\brepo\b|\brbi\b/
 const RATE_MOVE = /\b(go|goes|going|went|rise|rises|rising|rose|up|hike|hikes|hiked|increase|increases|jump|jumps)\b/
 
@@ -381,7 +415,7 @@ const ROUTES: Route[] = [
   {
     id: 'fees',
     test: re(
-      /\bfees?\b|how (do|does|will|would) (you|munim|this|it|u) (earn|make money|make any money|get paid|charge)|\bcommissions?\b|\bpricing\b|how much (do you|does munim|does this|does it|is munim|is it) (cost|charge)|what do (you|u) (earn|charge)|what'?s in it for (you|munim)|\bbusiness model\b/,
+      /\bfees?\b|how (do|does|will|would) (you|munim|this|it|u) (earn|make money|make any money|get paid|charge)|\bcommissions?\b|\bpricing\b|how much (do you|does munim|does this|does it|is munim|is it) (cost|charge)|what do (you|u) (earn|charge)|what'?s in it for (you|munim)|\bbusiness model\b|\b(plus|family|managed|free) plan\b|\bplans?\b.*\b(cost|price)\b/,
     ),
     answer: () => {
       const p = A.plans
@@ -395,12 +429,20 @@ const ROUTES: Route[] = [
   },
   {
     id: 'what-if-market',
-    test: (t) =>
-      (HYPOTHETICAL.test(t) && MARKET.test(t)) || /markets? (crash|fall|fell|drop|tank|are down)|\bcrash\b|\bbear market\b|\brecession\b/.test(t),
-    answer: () => {
+    test: (t) => HYPOTHETICAL.test(t) && MARKET.test(t),
+    answer: (t) => {
+      if (MARKET_UP.test(t) && !MARKET_DOWN.test(t)) {
+        const gain = Math.round(F.marketLinked * A.whatIf.marketFall)
+        return { id: 'what-if-market', lines: answers.whatIfMarketUp({ rise: A.whatIf.marketFall, exposed: F.marketLinked, gain }) }
+      }
       const loss = Math.round(F.marketLinked * A.whatIf.marketFall)
       return { id: 'what-if-market', lines: answers.whatIfMarket({ fall: A.whatIf.marketFall, exposed: F.marketLinked, loss }) }
     },
+  },
+  {
+    id: 'market',
+    test: re(/markets? (crash|crashed|fall|fell|drop|dropped|tank|tanked|are down|is down)|\bcrash\b|\bbear market\b|\brecession\b|\bsell (my )?(funds|stocks|shares|mutual funds|investments|everything)\b/),
+    answer: () => ({ id: 'market', lines: answers.marketSteady, chips: chipSets.marketFall }),
   },
   {
     id: 'what-if-rates',
@@ -436,6 +478,75 @@ const ROUTES: Route[] = [
   { id: 'sip', test: re(/\bsips?\b|systematic|step.?up|\bmutual funds?\b|\bmfs?\b/), answer: sip },
   { id: 'loan', test: re(/\bloans?\b|\bemis?\b|\bprepay|\bdebt\b|\bborrow|\bsbi\b/), answer: loan },
   {
+    id: 'salary',
+    test: re(/\bsalary\b|\bpay ?day\b|\bpaycheck\b|\bpay cheque\b/),
+    answer: () => ({ id: 'salary', lines: answers.salary({ amount: F.takeHome, bank: F.salaryBank }) }),
+  },
+  {
+    id: 'esop',
+    test: re(/\besops?\b|\bbuy ?back\b|\bvested\b|\bstock options\b|\borbit labs\b/),
+    answer: () => {
+      const e = F.esop
+      return {
+        id: 'esop',
+        lines: answers.esop({
+          company: e.company,
+          units: e.buybackUnits,
+          vested: e.vested,
+          price: e.buybackPrice,
+          taxRate: e.perquisiteTaxRate,
+          net: e.net,
+          landsOn: e.landsOn,
+          remainingUnits: e.remainingUnits,
+          remainingValue: e.remainingValue,
+        }),
+      }
+    },
+  },
+  {
+    id: 'gold-crypto',
+    test: re(/\bgold\b|\bsilver\b|\bcrypto|\bbitcoin\b|\bbtc\b|\bethereum\b|\bdoge/),
+    answer: (t) => {
+      const gold = /\bgold\b|\bsilver\b/.test(t)
+      const crypto = /\bcrypto|\bbitcoin\b|\bbtc\b|\bethereum\b|\bdoge/.test(t)
+      return { id: 'gold-crypto', lines: [...(gold ? [answers.gold] : []), ...(crypto || !gold ? [answers.crypto] : [])] }
+    },
+  },
+  {
+    id: 'invest',
+    test: re(/\binvest|\bbonus\b|\bwindfall\b|lump ?sum|extra (money|cash)|spare (money|cash)|where should i put|what should i do with/),
+    answer: (t) => {
+      const amount = parseRupees(t)
+      return {
+        id: 'invest',
+        lines: answers.invest({
+          amount: amount && amount >= 10_000 ? roundTo(amount, 1_000) : undefined,
+          target: F.emergencyTarget,
+          loanRate: F.loan.rate,
+          tranches: A.invest.tranches,
+          weeks: A.invest.weeks,
+          split: A.invest.split.map((x) => ({ name: F.fundName(x.fundId), share: x.share })),
+        }),
+      }
+    },
+  },
+  {
+    id: 'stocks',
+    test: re(/\bstocks?\b|\bshares\b|\bzerodha\b|\breliance\b|\btata elxsi\b|\bdixon\b/),
+    answer: () => {
+      const list = F.stocks.holdings.map((h) => ({ name: h.name, value: h.value }))
+      return {
+        id: 'stocks',
+        lines: answers.stocks({ broker: F.stocks.broker, list, total: F.investments.stocks, share: F.investments.stocks / F.investments.total }),
+      }
+    },
+  },
+  {
+    id: 'family',
+    test: re(/\bdad\b|\bfather\b|\bpapa\b|\bparents?\b|\bmom\b|\bmother\b|\bmum\b|\bsuresh\b|\bfamily\b|\bhousehold\b/),
+    answer: () => (dadConsented() ? { ...fd(), id: 'family' } : { id: 'family', lines: [answers.family], chips: chipSets.family }),
+  },
+  {
     id: 'net-worth',
     test: re(/net ?worth|how much (money )?(do i have|am i worth|have i got)|\bmy money\b|\bportfolio\b|where is my money|\bbalances?\b|\bwealth\b/),
     answer: () => ({
@@ -456,9 +567,24 @@ const ROUTES: Route[] = [
     answer: spending,
   },
   {
+    id: 'goal',
+    test: re(/\beducation\b|\bwedding\b|\bmarriage\b|\bchild(ren)?\b|\bkids?\b|\bdaughter\b|\bson\b|\btravel\b|\bvacation\b|\bholiday\b|\bgoals?\b|\bplan for\b|\bsave for\b/),
+    answer: () => ({ id: 'goal', lines: answers.goal({ goalYear: A.house.goalYear }) }),
+  },
+  {
+    id: 'regulated',
+    test: re(/\bregulat|\bsebi\b|\bria\b|\blicen[cs]ed?\b|\bregistered\b|\blegit\b/),
+    answer: () => ({ id: 'regulated', lines: [answers.regulated] }),
+  },
+  {
     id: 'safety',
-    test: re(/\bsafe\b|\bsafety\b|\bsecur|\bpin\b|\botp\b|\bprivacy\b|\bprivate\b|\bmy data\b|\bhack|\bfraud|\bscam|\btrust\b|\bregulat|\bsebi\b|\bria\b|\bconsent\b|\brevoke\b/),
+    test: re(/\bsafe\b|\bsafety\b|\bsecur|\bpin\b|\botp\b|\bprivacy\b|\bprivate\b|\bmy data\b|\bhack|\bfraud|\bscam|\btrust\b|\bconsent\b|\brevoke\b/),
     answer: () => ({ id: 'safety', lines: answers.safety }),
+  },
+  {
+    id: 'market',
+    test: re(/\bmarkets?\b|\bsensex\b|\bnifty\b/),
+    answer: () => ({ id: 'market', lines: answers.marketSteady, chips: chipSets.marketFall }),
   },
   {
     id: 'what-if',
@@ -472,7 +598,7 @@ const ROUTES: Route[] = [
   },
   {
     id: 'help',
-    test: re(/\bhelp\b|what can you do|who are you|what are you|what is munim|what do you do|how does (this|it|munim) work|\bfeatures?\b/),
+    test: (t) => (/^help\b/.test(t) && words(t) <= 3) || /what can you do|who are you|what are you|what is munim|what do you do|how does (this|it|munim) work|\bfeatures?\b/.test(t),
     answer: () => ({ id: 'help', lines: [answers.help], chips: chipSets.starter }),
   },
   {
