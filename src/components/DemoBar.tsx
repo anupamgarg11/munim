@@ -5,34 +5,38 @@ import { back, hasNext, next, reset, skipWait } from '../demo/runner'
 
 interface Props {
   variant: 'laptop' | 'phone'
-  collapsed?: boolean
-  onCollapsedChange?: (collapsed: boolean) => void
 }
 
 /*
   Demo bar. Back, Next and Reset drive the demo runner (src/demo/runner.ts); Skip wait runs
   every held card now and is live only while something is held; Free explore lifts the
-  onboarding gate so every tab works at any moment.
+  onboarding gate, stops the guided demo from acting for the viewer, and folds the bar to a
+  pill with the moment label (the pill unfolds it). On a phone the bar can always fold.
 */
-export function DemoBar({ variant, collapsed = false, onCollapsedChange }: Props) {
+export function DemoBar({ variant }: Props) {
   const moment = useMunim((s) => s.moment)
   const anyHeld = useMunim((s) => s.actions.some((a) => a.status === 'held'))
   const freeExplore = useMunim((s) => s.freeExplore)
   const setFreeExplore = useMunim((s) => s.setFreeExplore)
+  const collapsed = useMunim((s) => s.demoCollapsed)
+  const setCollapsed = useMunim((s) => s.setDemoCollapsed)
   const phone = variant === 'phone'
 
-  if (phone && collapsed) {
+  if (collapsed) {
     return (
       <button
         type="button"
         aria-expanded={false}
-        aria-label={demoBar.expand}
-        onClick={() => onCollapsedChange?.(false)}
-        className="on-dark num fixed right-3 z-40 inline-flex items-center gap-1.5 rounded-full bg-ink px-3.5 py-2 text-xs font-medium text-white shadow-device"
-        style={{ bottom: 'calc(76px + env(safe-area-inset-bottom, 0px))' }}
+        aria-label={`${demoBar.expand}: ${demoBar.momentLabel(moment)}`}
+        onClick={() => setCollapsed(false)}
+        className={`on-dark num fixed z-40 inline-flex max-w-[calc(100vw-24px)] items-center gap-2 rounded-full bg-ink py-2 pl-3.5 pr-3 text-xs font-medium text-white shadow-device ${
+          phone ? 'right-3' : 'bottom-4 right-6'
+        }`}
+        style={phone ? { bottom: 'calc(76px + env(safe-area-inset-bottom, 0px))' } : undefined}
       >
-        {demoBar.pillLabel(moment)}
-        <ChevronUp size={14} aria-hidden="true" />
+        <span className="truncate">{demoBar.momentLabel(moment)}</span>
+        {freeExplore && <span className="shrink-0 rounded-full bg-white/15 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide">{demoBar.freeExploreTag}</span>}
+        <ChevronUp size={14} aria-hidden="true" className="shrink-0" />
       </button>
     )
   }
@@ -45,6 +49,18 @@ export function DemoBar({ variant, collapsed = false, onCollapsedChange }: Props
     { key: 'free', label: demoBar.freeExplore, icon: Compass, onClick: () => setFreeExplore(!freeExplore), pressed: freeExplore },
   ]
 
+  const fold = (
+    <button
+      type="button"
+      aria-expanded={true}
+      aria-label={demoBar.collapse}
+      onClick={() => setCollapsed(true)}
+      className="shrink-0 rounded-button p-1.5 text-white/80 hover:bg-white/10 hover:text-white"
+    >
+      <ChevronDown size={18} aria-hidden="true" />
+    </button>
+  )
+
   return (
     <section
       aria-label={demoBar.region}
@@ -52,28 +68,18 @@ export function DemoBar({ variant, collapsed = false, onCollapsedChange }: Props
       style={phone ? { paddingBottom: 'calc(8px + env(safe-area-inset-bottom, 0px))' } : undefined}
     >
       <div className={phone ? 'flex flex-col gap-2' : 'mx-auto flex max-w-[1600px] items-center justify-between gap-4'}>
-        <div className="flex items-center justify-between gap-2">
-          <p aria-live="polite" className="num text-sm font-medium">
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <p aria-live="polite" className="num truncate text-sm font-medium">
             {demoBar.momentLabel(moment)}
           </p>
-          {phone && (
-            <button
-              type="button"
-              aria-expanded={true}
-              aria-label={demoBar.collapse}
-              onClick={() => onCollapsedChange?.(true)}
-              className="rounded-button p-1.5 text-white/80 hover:bg-white/10 hover:text-white"
-            >
-              <ChevronDown size={18} aria-hidden="true" />
-            </button>
-          )}
+          {phone && fold}
         </div>
-        <div className={phone ? 'flex items-stretch justify-between gap-1' : 'flex items-center gap-2'}>
+        <div className={phone ? 'grid grid-cols-5 gap-1' : 'flex items-center gap-2'}>
           {buttons.map((b) => {
             const Icon = b.icon
             const base = phone
-              ? 'flex flex-col items-center gap-0.5 whitespace-nowrap rounded-button px-2 py-1.5 text-[11px]'
-              : 'inline-flex items-center gap-1.5 rounded-button px-3 py-1.5 text-sm'
+              ? 'flex min-w-0 flex-col items-center gap-0.5 rounded-button px-1 py-1.5 text-[11px]'
+              : 'inline-flex items-center gap-1.5 whitespace-nowrap rounded-button px-3 py-1.5 text-sm'
             const tone = b.primary
               ? 'bg-accent text-white hover:brightness-110'
               : b.pressed
@@ -90,11 +96,12 @@ export function DemoBar({ variant, collapsed = false, onCollapsedChange }: Props
                 title={b.title}
                 className={`${base} ${tone} font-medium transition disabled:cursor-not-allowed disabled:opacity-40`}
               >
-                <Icon size={phone ? 18 : 16} aria-hidden="true" />
-                {b.label}
+                <Icon size={phone ? 18 : 16} aria-hidden="true" className="shrink-0" />
+                <span className={phone ? 'max-w-full truncate' : ''}>{b.label}</span>
               </button>
             )
           })}
+          {!phone && fold}
         </div>
       </div>
     </section>

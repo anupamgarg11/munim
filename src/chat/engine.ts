@@ -4,6 +4,8 @@
 
     play(script, opts?)   queue a script; resolves true when it finished, false if cancelled
     cancel()              stop everything now: pending steps, timers, typing (Back and Reset)
+    setHurry(on)          fast-forward: every pending and new wait ends at once (Next mid-script)
+    whenIdle()            resolves once nothing is playing or queued
     resetChat()           cancel() plus clear chat-only state (flip, highlight, clock)
     ask(text)             the person's message plus the intent matcher's scripted answer
     tapChip(label)        a quick reply: echoes the label, then its handler or the matcher
@@ -83,10 +85,13 @@ interface Pending {
 }
 const pending = new Set<Pending>()
 
+/** Fast-forward: waits end at once (Next pressed while a script is still typing) */
+let hurrying = false
+
 /** Resolves true after ms, or false at once if the engine is cancelled meanwhile. */
 function sleep(ms: number, gen: number): Promise<boolean> {
   if (gen !== generation) return Promise.resolve(false)
-  if (ms <= 0) return Promise.resolve(true)
+  if (ms <= 0 || hurrying) return Promise.resolve(true)
   return new Promise((resolve) => {
     const entry: Pending = {
       timer: setTimeout(() => {
@@ -98,6 +103,29 @@ function sleep(ms: number, gen: number): Promise<boolean> {
     pending.add(entry)
   })
 }
+
+/** Wait ms on the engine's clock: false if cancel() came first; ends at once while hurrying */
+export function wait(ms: number): Promise<boolean> {
+  return sleep(ms, generation)
+}
+
+/**
+ * Fast-forward on or off. On: every pending wait (typing dots, gaps, later() timers) ends
+ * now, and new ones end at once, until it is turned off. Nothing is skipped, only the waits.
+ */
+export function setHurry(on: boolean) {
+  hurrying = on
+  if (!on) return
+  for (const p of pending) {
+    clearTimeout(p.timer)
+    p.resolve(true)
+  }
+  pending.clear()
+  useChat.getState().setTyping('nikhil', false)
+  useChat.getState().setTyping('suresh', false)
+}
+
+export const isHurrying = () => hurrying
 
 /** Run fn after ms unless cancel() comes first (timers that Back and Reset must stop) */
 export function later(ms: number, fn: () => void) {
@@ -129,6 +157,17 @@ export function resetChat() {
 /** True while a script is playing or queued */
 export const isPlaying = () => running > 0
 
+/** Resolves once nothing is playing or queued (scripts queued meanwhile are waited for too). */
+export async function whenIdle(): Promise<void> {
+  for (let i = 0; i < 50; i++) {
+    const t = tail
+    await t.catch(() => undefined)
+    // Let timers that queue follow-ups (a chip after an answer) run first.
+    await new Promise((r) => setTimeout(r, 0))
+    if (t === tail && running === 0) return
+  }
+}
+
 /* ---------- Messages in the store ---------- */
 
 const IST_OFFSET_MS = 330 * 60 * 1000
@@ -152,6 +191,18 @@ export function appendMessage(input: MessageInput, thread: ThreadId = 'nikhil'):
   const exists = st.messages.some((m) => m.id === msg.id)
   st.setMessages(exists ? st.messages.map((m) => (m.id === msg.id ? msg : m)) : [...st.messages, msg])
   return msg
+}
+
+/**
+ * Put a message in the thread at its own time (a ping stamped earlier than now, the weekly
+ * brief): inserted in time order, and the story clock does not move.
+ */
+export function insertMessage(msg: Message) {
+  const st = useMunim.getState()
+  if (st.messages.some((m) => m.id === msg.id)) return
+  const t = new Date(msg.at).getTime()
+  const i = st.messages.findIndex((m) => new Date(m.at).getTime() > t)
+  st.setMessages(i < 0 ? [...st.messages, msg] : [...st.messages.slice(0, i), msg, ...st.messages.slice(i)])
 }
 
 /** Patch one message in place */
@@ -310,11 +361,22 @@ export function tapChip(label: string, thread: ThreadId = 'nikhil'): Promise<boo
 
 /* ---------- Surfaces: flip and deep links ---------- */
 
-/** Flip the WhatsApp frame to a phone. On the phone layout this also shows the WhatsApp surface. */
+/** Time for the WhatsApp surface to come up before the frame flips, so the flip is seen */
+const FLIP_AFTER_SWITCH_MS = 320
+
+/**
+ * Flip the WhatsApp frame to a phone. On the phone layout this also shows the WhatsApp
+ * surface first, then flips, so the flip is visible there too.
+ */
 export function showPhone(owner: WhatsAppOwner) {
   const st = useMunim.getState()
-  if (owner === 'suresh' && st.surface !== 'whatsapp') st.setSurface('whatsapp')
-  useChat.getState().setWhatsappOwner(owner)
+  const chat = useChat.getState()
+  if (owner === 'suresh' && st.surface !== 'whatsapp') {
+    st.setSurface('whatsapp')
+    if (chat.whatsappOwner !== owner) later(FLIP_AFTER_SWITCH_MS, () => useChat.getState().setWhatsappOwner(owner))
+    return
+  }
+  chat.setWhatsappOwner(owner)
 }
 
 /** Call a main-store function by the first name that exists; a missing one is a safe no-op. */

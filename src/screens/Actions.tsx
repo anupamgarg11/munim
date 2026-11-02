@@ -8,9 +8,9 @@ import { useMunim } from '../store'
 import type { ActionCard, ActionType } from '../types'
 import { GROUP_ORDER, groupOf, type ActionGroup } from './selectors'
 import { useUi } from './uiStore'
-// Swap point: item 3's full card takes the same { card } prop and pulses itself on a deep link:
-// import { ActionCard as ActionRowView } from '../components/ActionCard'
-import { ActionsRow as ActionRowView } from './ActionsRow'
+// The full card: approve (tap or the UPI PIN sheet), Cancel with the live countdown, Retry,
+// View receipt; it scrolls into view and pulses itself on a deep link.
+import { ActionCard as ActionRowView } from '../components/ActionCard'
 
 const lastAt = (a: ActionCard) => a.timeline[a.timeline.length - 1]?.at ?? a.createdAt
 

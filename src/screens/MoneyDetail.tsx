@@ -5,7 +5,7 @@ import { ScreenButton, ScreenCard, ScreenFact, ScreenSection } from '../componen
 import { moneyCopy } from '../copy/screens'
 import { fmtAsOf, fmtDate, fmtINR } from '../lib/format'
 import { useMunim } from '../store'
-import { holdingDetail, relatedActions, sourceLabel, usePersona } from './selectors'
+import { freshAsOf, holdingDetail, relatedActions, sourceLabel, usePersona } from './selectors'
 import { openTrustData, useUi, type HoldingRef } from './uiStore'
 
 /** SPEC 9.3: a holding's detail, inside the Money tab: source, freshness, related actions. */
@@ -13,6 +13,7 @@ export function MoneyDetail({ holding }: { holding: HoldingRef }) {
   const actions = useMunim((s) => s.actions)
   const close = useUi((s) => s.closeHolding)
   const renewed = useUi((s) => s.renewedConsents)
+  const clock = useMunim((s) => s.clock)
   const persona = usePersona()
   const ref = useRef<HTMLDivElement>(null)
 
@@ -61,7 +62,7 @@ export function MoneyDetail({ holding }: { holding: HoldingRef }) {
             <Database size={16} className="shrink-0 text-accent" aria-hidden="true" />
             {src ? sourceLabel(src) : moneyCopy.detailSource}
           </p>
-          <p className="num text-sm text-muted">{fmtAsOf(d.asOf)}</p>
+          <p className="num text-sm text-muted">{fmtAsOf(freshAsOf(d.asOf, clock))}</p>
           {expiry && <p className="num text-sm text-muted">{moneyCopy.detailConsent(fmtDate(expiry, { year: true }))}</p>}
           <div>
             <ScreenButton variant="link" onClick={openTrustData}>

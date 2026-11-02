@@ -7,6 +7,12 @@
 import { fmtDate, fmtINR, fmtLakh, fmtPct } from '../lib/format'
 import { fmtDateHi, fmtLakhHi } from './chat'
 
+/** 1 -> "1st", 5 -> "5th", 22 -> "22nd" */
+const ordinal = (n: number) => {
+  const t = n % 100
+  return t >= 11 && t <= 13 ? `${n}th` : `${n}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`
+}
+
 /* ---------- Commentary (SPEC 7, three lines per moment) ---------- */
 
 export const commentary5to8 = {
@@ -62,6 +68,10 @@ export const harvest = {
   timelineBought: (name: string, value: number) => `Bought ${name} · ${fmtINR(value)}, same day`,
   effectSell: (name: string) => `Sold ${name} to book the loss`,
   effectBuy: (name: string) => `Bought ${name}, same day`,
+  sipLine: (name: string) => `Move the monthly SIP to ${name}`,
+  sipNote: (day: number) => `Same amount, same date (the ${ordinal(day)}), so your plan doesn't change.`,
+  timelineSip: (name: string, amount: number) => `SIP of ${fmtINR(amount)} a month moved to ${name}`,
+  trancheRedirect: (from: string, to: string) => `${from} was sold in the tax harvest, so its share of this tranche buys ${to}`,
 }
 
 /* ---------- Moment 6: Ask anything (SPEC 5.6) ---------- */

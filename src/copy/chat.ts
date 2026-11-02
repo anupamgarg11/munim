@@ -51,7 +51,7 @@ export const card = {
   needsApproval: 'Needs your approval',
   pinNote: 'You enter your UPI PIN in the Munim app, never in chat.',
   alsoConsidered: 'Also considered:',
-  earned: 'We earned ₹0',
+  earned: 'We earned ₹0 on this',
   /** "₹11,400 a year", "₹6,40,000 now", or the card's own label */
   impact: (amount: number, per: 'now' | 'year' | 'none', label?: string) =>
     label ?? (per === 'year' ? `${fmtINR(amount)} a year` : per === 'now' ? `${fmtINR(amount)} now` : 'No ₹ impact'),
@@ -125,7 +125,7 @@ export const answers = {
   }) => [
     'Yes, two ways.',
     `A: buy in March. ${L(v.downNow)} down from the liquid fund and a ${L(v.loanNow)} loan at ${fmtPct(v.rate)} for ${v.years} years. EMI ${fmtINR(v.emiNow)}, and your ${v.goalYear} house down payment moves back ${v.goalDelayMonths} months.\nB: wait till ${v.waitUntil} and put ${L(v.downLater)} down. EMI ${fmtINR(v.emiLater)}, and your goals don't move.`,
-    "I'd pick B unless the current car is costing you. Either way, I'd insure it direct and keep the emergency fund untouched.",
+    "I'd pick B unless the current car is costing you: it keeps your emergency fund untouched. Either way, I'd insure it direct from the insurer.",
   ],
   carStretch: (v: {
     price: number

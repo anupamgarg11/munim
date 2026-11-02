@@ -6,4 +6,7 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   base: '/munim/',
   plugins: [react(), tailwindcss()],
+  // One bundle on purpose (no route splitting in a single-screen demo). The budget that
+  // matters is SPEC 10: under 300 KB of JS gzipped; this bundle is about half of that.
+  build: { chunkSizeWarningLimit: 700 },
 })

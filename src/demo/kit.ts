@@ -138,6 +138,35 @@ export function settleDefault() {
   }
 }
 
+/* ---------- Guided mode: what the demo may do for the viewer ---------- */
+
+/**
+ * Chip messages (by message id) whose first chip is the moment's primary step. In guided
+ * mode (not Free explore) the demo taps it for the viewer when they press Next, or after a
+ * few idle seconds (demo/autoplay.ts). Moments register their ids on import.
+ */
+export const autoChips = new Set<string>()
+
+/**
+ * Chips that themselves advance the story (moment 1's "Show me" plays moment 2). Next never
+ * taps these, since Next advances anyway; the idle timer may.
+ */
+export const advancingChips = new Set<string>()
+
+/** Called when the runner moves the demo clock forward: (from, to). The weekly brief uses it. */
+type ClockHook = (from: ISODateTime, to: ISODateTime) => void
+const clockHooks = new Set<ClockHook>()
+
+export function onClockMove(fn: ClockHook): () => void {
+  clockHooks.add(fn)
+  return () => clockHooks.delete(fn)
+}
+
+export function clockMoved(from: ISODateTime, to: ISODateTime) {
+  if (new Date(to).getTime() <= new Date(from).getTime()) return
+  for (const fn of clockHooks) fn(from, to)
+}
+
 /* ---------- Watchers that the runner clears on Back and Reset ---------- */
 
 const watchers = new Set<() => void>()

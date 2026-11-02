@@ -233,6 +233,33 @@ function applyOne(p: PersonaData, e: Effect, at: ISODateTime): PersonaData {
       return applyFund(p, e.id ?? LIQUID_FUND_ID, e, at, true)
     case 'fund':
       return e.id ? applyFund(p, e.id, e, at, false) : p
+    case 'switch': {
+      const f = p.funds.find((x) => x.id === e.id)
+      if (!f || e.delta <= 0) return p
+      const moving = sum(f.lots.filter((l) => l.olderThanYear === true).map((l) => l.value))
+      if (moving <= 0) return p
+      const keep = f.lots.filter((l) => l.olderThanYear !== true)
+      const directId = `${f.id}-direct`
+      const existing = p.funds.find((x) => x.id === directId)
+      const direct: MutualFund = existing
+        ? { ...existing, lots: [...existing.lots, boughtLot(moving, at)], asOf: at }
+        : { id: directId, name: e.name ?? f.name, plan: 'direct', heldVia: fundNotes.via, lots: [boughtLot(moving, at)], sourceId: f.sourceId, asOf: at }
+      // The direct plan sits right after the regular one it came from.
+      const funds = p.funds
+        .filter((x) => x.id !== directId)
+        .flatMap((x) => (x.id === f.id ? [...(keep.length ? [{ ...x, lots: keep, asOf: at }] : []), direct] : [x]))
+      return { ...p, funds }
+    }
+    case 'sip': {
+      if (!e.id) return p
+      const cur = p.sips.find((x) => x.fundId === e.id)
+      if (!cur) {
+        if (e.delta <= 0) return p
+        return { ...p, sips: [...p.sips, { fundId: e.id, amount: e.delta, dayOfMonth: p.sips[0]?.dayOfMonth ?? 5 }] }
+      }
+      const amount = cur.amount + e.delta
+      return { ...p, sips: amount > 0 ? p.sips.map((x) => (x === cur ? { ...x, amount } : x)) : p.sips.filter((x) => x !== cur) }
+    }
     case 'member': {
       const s = p.suresh
       if (e.id === s.fd.id) return { ...p, suresh: { ...s, fd: { ...s.fd, principal: s.fd.principal + e.delta } } }
@@ -291,11 +318,17 @@ export interface SplitInputs {
   tranches: number
   /** Share of each tranche per direct fund (50/35/15) */
   split: readonly { fundId: string; share: number }[]
+  /**
+   * Most of the windfall the liquid top-up may take (e.g. 0.4), so a path where the
+   * emergency fund is far from target still invests a sane share. Default: no cap.
+   */
+  topUpMaxShare?: number
 }
 
 /**
  * The buyback money in three lines: prepay the loan, top the liquid fund up to the
- * emergency target, and the rest into the direct funds in equal tranches.
+ * emergency target (at most topUpMaxShare of the windfall), and the rest into the direct
+ * funds in equal tranches.
  */
 export function selectEsopSplit(p: PersonaData, x: SplitInputs) {
   const net = selectEsop(p).net
@@ -303,7 +336,10 @@ export function selectEsopSplit(p: PersonaData, x: SplitInputs) {
   const prepay = Math.max(0, Math.min(x.prepay, loan?.outstanding ?? 0, net))
   const target = x.emergencyMonths * selectMonthlySpend(p)
   const liquidNow = selectLiquid(p)
-  const topUp = Math.min(Math.max(0, target - liquidNow), net - prepay)
+  const capShare = x.topUpMaxShare ?? 1
+  // Rounded down to ₹10,000 when the cap binds, so the line reads as a plan, not a remainder.
+  const cap = capShare < 1 ? Math.floor((net * capShare) / 10_000) * 10_000 : net
+  const topUp = Math.min(Math.max(0, target - liquidNow), net - prepay, cap)
   const rest = net - prepay - topUp
   // Tranches rounded down to ₹100; the last takes the remainder.
   const each = Math.floor(rest / x.tranches / 100) * 100

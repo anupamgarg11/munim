@@ -1,5 +1,6 @@
 import { Monitor, Smartphone } from 'lucide-react'
 import { useMunim } from '../store'
+import { useChat } from '../chat/chatStore'
 import { stage } from '../copy/shell'
 import { SegmentedControl } from '../components/SegmentedControl'
 import { CommentaryPanel } from '../components/CommentaryPanel'
@@ -16,6 +17,9 @@ export function LaptopLayout() {
   const centreView = useMunim((s) => s.centreView)
   const setCentreView = useMunim((s) => s.setCentreView)
   const wide = centreView === 'wide'
+  // The caption follows whose phone the WhatsApp frame shows (it flips to Dad's in moment 7).
+  const owner = useChat((s) => s.whatsappOwner)
+  const waCaption = owner === 'suresh' ? stage.sureshCaption : stage.whatsappCaption
 
   return (
     <div className="grid h-dvh grid-rows-[minmax(0,1fr)_auto] bg-stage">
@@ -23,10 +27,14 @@ export function LaptopLayout() {
         className="grid min-h-0 gap-6 px-6 pb-4 pt-3"
         style={{ gridTemplateColumns: wide ? 'minmax(0, 420px) minmax(0, 1fr) auto' : 'minmax(0, 1fr) minmax(0, 1fr) auto' }}
       >
-        <section aria-label={stage.whatsappCaption} className="flex min-h-0 min-w-0 flex-col">
-          <p className={CAPTION}>{stage.whatsappCaption}</p>
+        <section aria-label={waCaption} className="flex min-h-0 min-w-0 flex-col">
+          <p className={CAPTION} aria-live="polite">
+            <span key={owner} className="animate-fade-in">
+              {waCaption}
+            </span>
+          </p>
           <div className="min-h-0 flex-1">
-            <PhoneFrame label={stage.whatsappCaption} statusBackground="var(--wa-header)" statusTone="light">
+            <PhoneFrame label={waCaption} statusBackground="var(--wa-header)" statusTone="light">
               <WhatsAppSurface />
             </PhoneFrame>
           </div>

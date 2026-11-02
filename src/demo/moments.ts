@@ -23,13 +23,17 @@ import { termShouldBe } from '../screens/selectors'
 import { diwaliBudget } from '../screens/screenData'
 import { assumptions } from '../chat/facts'
 import type { ScriptStep } from '../chat/engine'
-import { HOLD_MINUTES, fmtCountdown } from '../lib/actions'
+import { HOLD_MINUTES, addMinutes, fmtCountdown } from '../lib/actions'
+import { fmtTime } from '../lib/format'
+import { insertMessage } from '../chat/engine'
 import { momentTitles } from '../copy/shell'
 import { commentary, fundShort, m1, m2, m3, m4 } from '../copy/moments'
 import { RULE_IDS } from './rules'
 import {
   addDays,
   addWorkingDays,
+  advancingChips,
+  autoChips,
   nextDayOfMonth,
   nextSalaryDay,
   stamp,
@@ -38,7 +42,7 @@ import {
   type MomentContext,
   type MomentDef,
 } from './kit'
-import type { ActionDraft, CreditCard, Effect, ISODateTime, Moment } from '../types'
+import type { ActionCard, ActionDraft, CreditCard, Effect, ISODateTime, Message, Moment } from '../types'
 
 export type { Commentary, MomentContext, MomentDef } from './kit'
 
@@ -81,6 +85,10 @@ const INPUTS = {
   billTime: '06:00',
   /** SPEC 5.4: the next advance-tax instalment */
   advanceTaxDue: '2026-12-15',
+  /** SPEC 9.5: one card bill fails at the bank on its due date and goes through on retry */
+  failingBill: { cardId: 'magnus', failsAt: '02:10', retryAt: '10:00' },
+  /** The liquid top-up takes at most this share of the buyback, so off-path splits stay sane */
+  topUpMaxShare: 0.4,
 }
 
 const st = () => useMunim.getState()
@@ -105,6 +113,10 @@ async function ensureConnected(ctx: MomentContext) {
 /* ---------- Moment 1: Connect and reveal (SPEC 5.1) ---------- */
 
 export const REVEAL_IDS = { text: 'm1-reveal', chips: 'm1-chips' }
+
+// Guided mode taps "Show me" for an idle viewer; it plays moment 2, so Next never taps it.
+autoChips.add(REVEAL_IDS.chips)
+advancingChips.add(REVEAL_IDS.chips)
 
 /** "Here's all your money in one picture, and three things I found." with the Show me chip */
 export function revealSteps(): ScriptStep[] {
@@ -186,7 +198,16 @@ function cardB(p: PersonaData, at: ISODateTime): ActionDraft | null {
     amount: reg.olderThanYear.value,
     when: m2.cardB.when(doneBy, INPUTS.switchDays),
     alsoConsidered: m2.cardB.also(INPUTS.switchAllTodayCost),
-    // A switch keeps the value invested: no effects on balances (the units change plan).
+    // A switch keeps the value invested: the older units change plan (net worth unchanged).
+    effects: p.funds
+      .filter((f) => f.plan === 'regular' && f.lots.some((l) => l.olderThanYear === true))
+      .map((f) => ({
+        target: 'switch',
+        id: f.id,
+        name: f.name,
+        delta: sum(f.lots.filter((l) => l.olderThanYear === true).map((l) => l.value)),
+        label: m2.cardB.effect(f.name),
+      })),
     receiptPlan: { what: m2.cardB.receipt(reg.olderThanYear.value), timeline: m2.cardB.timeline(doneBy) },
   }
 }
@@ -282,6 +303,10 @@ function billCard(p: PersonaData, card: CreditCard): ActionDraft {
   const rule = st().rules.find((r) => r.id === RULE_IDS.payCards)
   const hdfc = salaryAccount(p)
   const label = m3.bill.receipt(card.statement, card.name)
+  // SPEC 9.5: this bill's run is declined by the bank; it is held so the run lands at failsAt.
+  const failing = card.id === INPUTS.failingBill.cardId
+  const failsAt = stamp(card.due, INPUTS.failingBill.failsAt)
+  const scheduledFor = failing ? addMinutes(failsAt, -(rule?.holdMinutes ?? HOLD_MINUTES)) : stamp(card.due, INPUTS.billTime)
   return {
     id: IDS.bill(card.id),
     type: 'pay',
@@ -295,7 +320,15 @@ function billCard(p: PersonaData, card: CreditCard): ActionDraft {
     approvalDetail: m3.bill.approvalDetail(rule?.name ?? ''),
     ruleId: RULE_IDS.payCards,
     amount: card.statement,
-    scheduledFor: stamp(card.due, INPUTS.billTime),
+    scheduledFor,
+    ...(failing
+      ? {
+          scriptedFailure: {
+            reason: m3.bill.declined(fmtTime(failsAt, { clock: '24h' })),
+            retryAt: stamp(card.due, INPUTS.failingBill.retryAt),
+          },
+        }
+      : {}),
     alsoConsidered: m3.bill.also(p.buffer.amount),
     receiptPlan: { what: label },
     effects: [
@@ -345,6 +378,32 @@ function sweepCard(p: PersonaData) {
   }
   return { plan, draft }
 }
+
+/**
+ * Money at risk is worth a ping (SPEC 1.7): when a card fails, the chat says so at the time it
+ * failed, with the card (and its Retry) right under it.
+ */
+function pingFailure(card: ActionCard) {
+  if (!card.failure) return
+  const at = card.timeline[card.timeline.length - 1]?.at ?? st().clock
+  const text: Message = {
+    id: `msg-fail-${card.id}-${card.timeline.length}`,
+    thread: 'nikhil',
+    kind: 'text',
+    from: 'munim',
+    at,
+    text: m3.bill.failedPing(card.receiptPlan?.what ?? card.title, card.failure.reason, card.failure.retryAt),
+  }
+  insertMessage(text)
+  insertMessage({ id: `${text.id}-card`, thread: 'nikhil', kind: 'action', from: 'munim', at, actionId: card.id })
+}
+
+useMunim.subscribe((s, prev) => {
+  if (s.actions === prev.actions) return
+  for (const a of s.actions) {
+    if (a.status === 'failed' && prev.actions.find((x) => x.id === a.id)?.status !== 'failed') pingFailure(a)
+  }
+})
 
 /** Both rules fired on the salary credit: stamp their last run and when they next expect to */
 function stampRules(at: ISODateTime) {
@@ -423,6 +482,7 @@ function splitPlan(p: PersonaData, at: ISODateTime) {
     emergencyMonths: INPUTS.emergencyMonths,
     tranches: assumptions.invest.tranches,
     split: assumptions.invest.split,
+    topUpMaxShare: INPUTS.topUpMaxShare,
   })
   const dates = s.tranches.map((_, i) => addDays(stamp(at.slice(0, 10), INPUTS.runTime), i * INPUTS.trancheGapDays))
   return { ...s, dates }

@@ -55,9 +55,13 @@ export function Onboarding({ wide = false }: { wide?: boolean }) {
   const index = ONBOARDING_STEPS.indexOf(step)
   const counted = ONBOARDING_STEPS.length - 1 // the reveal is not a step you take
   const canGoBack = index > 0 && step !== 'reveal'
+  // Guided mode plays these steps itself; a click or key inside hands them back to the viewer.
+  const takeOver = () => {
+    if (useDemo.getState().autoplay) useDemo.getState().setAutoplay(false)
+  }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-bg">
+    <div className="flex h-full min-h-0 flex-col bg-bg" onPointerDownCapture={takeOver} onKeyDownCapture={takeOver}>
       <header className="flex shrink-0 items-center gap-2 border-b border-line bg-card px-4 py-2.5">
         {canGoBack ? (
           <button
@@ -168,7 +172,8 @@ function PhoneStep({ next }: { next: () => void }) {
 
 function OtpStep({ next }: { next: () => void }) {
   const phone = useDemo((s) => s.phone)
-  const [otp, setOtp] = useState('')
+  const otp = useDemo((s) => s.otp)
+  const setOtp = useDemo((s) => s.setOtp)
   const id = useId()
   const ready = otp.length === 6
   const submit = (e: FormEvent) => {

@@ -22,6 +22,7 @@ import {
   useAutoScroll,
 } from '../chat/ui/ChatParts'
 import type { ConsentRequestMessage, Message } from '../types'
+import { CommentaryButton } from '../components/CommentarySheet'
 import '../chat/chat.css'
 
 /*
@@ -45,11 +46,33 @@ export function SureshFrame({ onConsent = giveConsent, onBack = () => showPhone(
   const last = thread[thread.length - 1]
   const chips = !typing && last?.kind === 'chips' ? last.chips : []
   const [sheet, setSheet] = useState<ConsentRequestMessage | null>(null)
+  const [autoSheet, setAutoSheet] = useState(false)
+  const autoConsent = useChat((s) => s.autoConsent)
   const scrollRef = useRef<HTMLDivElement>(null)
   useAutoScroll(scrollRef, `${thread.length}:${typing}:${chips.length}`)
 
+  // Guided mode: Dad opens the request and types his OTP himself (demo/autoplay.ts asks).
+  useEffect(() => {
+    if (!autoConsent) return
+    const m = thread.find((x): x is ConsentRequestMessage => x.id === autoConsent && x.kind === 'consent')
+    if (!m) return
+    useChat.getState().setAutoConsent(null)
+    setAutoSheet(true)
+    setSheet(m)
+  }, [autoConsent, thread])
+
   const render = (m: Message, tail: boolean) => {
-    if (m.kind === 'consent') return <ConsentBubble m={m} tail={tail} onOpen={() => setSheet(m)} />
+    if (m.kind === 'consent')
+      return (
+        <ConsentBubble
+          m={m}
+          tail={tail}
+          onOpen={() => {
+            setAutoSheet(false)
+            setSheet(m)
+          }}
+        />
+      )
     if (m.kind === 'text') {
       return (
         <Bubble side={m.from === 'munim' ? 'in' : 'out'} tail={tail}>
@@ -69,6 +92,7 @@ export function SureshFrame({ onConsent = giveConsent, onBack = () => showPhone(
         verifiedLabel={chatHi.verified}
         onBack={onBack}
         backLabel={chatHi.back}
+        action={<CommentaryButton tone="light" />}
       />
       <div className="wa-doodle flex min-h-0 flex-1 flex-col">
         <div ref={scrollRef} role="log" aria-label={chatHi.log} className="no-scrollbar min-h-0 flex-1 overflow-y-auto pb-2">
@@ -88,6 +112,7 @@ export function SureshFrame({ onConsent = giveConsent, onBack = () => showPhone(
         <ConsentSheet
           key={sheet.id}
           m={sheet}
+          auto={autoSheet}
           onClose={() => setSheet(null)}
           onApproved={() => onConsent({ messageId: sheet.id, memberId: sheet.memberId, actionId: sheet.actionId })}
         />
@@ -161,7 +186,11 @@ function ConsentBubble({ m, tail, onOpen }: { m: ConsentRequestMessage; tail: bo
 
 /* ---------- The Account Aggregator (or SBI) page with the OTP ---------- */
 
-function ConsentSheet({ m, onClose, onApproved }: { m: ConsentRequestMessage; onClose: () => void; onApproved: () => void }) {
+/** The OTP Dad "types" in guided mode, one digit at a time */
+const AUTO_OTP = '482916'
+const AUTO_DIGIT_MS = 140
+
+function ConsentSheet({ m, auto = false, onClose, onApproved }: { m: ConsentRequestMessage; auto?: boolean; onClose: () => void; onApproved: () => void }) {
   const [otp, setOtp] = useState('')
   const [approved, setApproved] = useState(false)
   const fd = Boolean(m.actionId)
@@ -173,15 +202,25 @@ function ConsentSheet({ m, onClose, onApproved }: { m: ConsentRequestMessage; on
     handlers.current = { onApproved, onClose }
   })
 
+  // Guided mode: the OTP fills in digit by digit, then he approves.
+  useEffect(() => {
+    if (!auto) return
+    const timers: ReturnType<typeof setTimeout>[] = []
+    for (let i = 1; i <= AUTO_OTP.length; i++) timers.push(setTimeout(() => setOtp(AUTO_OTP.slice(0, i)), 300 + i * AUTO_DIGIT_MS))
+    timers.push(setTimeout(() => setApproved(true), 300 + (AUTO_OTP.length + 3) * AUTO_DIGIT_MS))
+    return () => timers.forEach(clearTimeout)
+  }, [auto])
+
   // After "मंज़ूर हो गया", hand over and close
   useEffect(() => {
     if (!approved) return
     const t = setTimeout(() => {
-      handlers.current.onApproved()
+      // Given meanwhile (the guided demo can hand it over directly): just close.
+      if (!useChat.getState().consentGiven[consentKey(m)]) handlers.current.onApproved()
       handlers.current.onClose()
     }, 900)
     return () => clearTimeout(t)
-  }, [approved])
+  }, [approved, m])
 
   const submit = (e: FormEvent) => {
     e.preventDefault()

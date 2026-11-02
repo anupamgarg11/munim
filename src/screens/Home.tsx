@@ -12,10 +12,11 @@ import * as P from '../data/persona'
 import { fmtDate, fmtINR, fmtTime } from '../lib/format'
 import { useMunim } from '../store'
 import type { ActionCard, Message } from '../types'
-import { latestMunim, sameDay, upNext, usePersona, weeklyBrief } from './selectors'
+import { latestMunim, nextBriefAt, sameDay, upNext } from './selectors'
 import { openAction } from './uiStore'
 import { useActionStatusLine } from './useNow'
-import { impactText } from './ActionsRow'
+import { earned, impactText } from '../copy/cards'
+import { isMoneyCard } from '../lib/actions'
 
 const personName = (id: string) => (P.people as Record<string, { name: string }>)[id]?.name ?? id
 
@@ -44,17 +45,14 @@ export function HomeScreen() {
   const messages = useMunim((s) => s.messages)
   const actions = useMunim((s) => s.actions)
   const clock = useMunim((s) => s.clock)
-  const persona = usePersona()
 
   const byId = new Map(actions.map((a) => [a.id, a]))
   const latest = latestMunim(messages)
   const next = upNext(actions)
   const thread = messages.filter((m) => m.thread === 'nikhil')
-  const lastBrief = [...thread].reverse().find((m) => m.kind === 'brief')
-  const brief =
-    lastBrief && lastBrief.kind === 'brief'
-      ? { when: homeCopy.briefWhen(fmtDate(lastBrief.at)), lines: lastBrief.lines }
-      : weeklyBrief(persona)
+  // The latest brief that has gone out by now (SPEC 1.7: Sundays, 6 pm); before the first, when it comes.
+  const lastBrief = [...thread].reverse().find((m) => m.kind === 'brief' && new Date(m.at).getTime() <= new Date(clock).getTime())
+  const brief = lastBrief && lastBrief.kind === 'brief' ? { when: homeCopy.briefWhen(fmtDate(lastBrief.at)), lines: lastBrief.lines } : null
 
   return (
     <ScreenShell>
@@ -113,16 +111,26 @@ export function HomeScreen() {
         )}
       </ScreenSection>
 
-      <ScreenSection title={homeCopy.briefTitle} aside={brief.when}>
+      <ScreenSection title={homeCopy.briefTitle} aside={brief?.when}>
         <ScreenCard>
-          <ul className="flex flex-col gap-2">
-            {brief.lines.map((l) => (
-              <li key={l} className="flex gap-2 text-sm leading-snug text-ink">
-                <CalendarClock size={14} className="mt-0.5 shrink-0 text-accent" aria-hidden="true" />
-                <span className="num">{l}</span>
-              </li>
-            ))}
-          </ul>
+          {brief ? (
+            <ul className="flex flex-col gap-2">
+              {brief.lines.map((l) => (
+                <li key={l} className="flex gap-2 text-sm leading-snug text-ink">
+                  <CalendarClock size={14} className="mt-0.5 shrink-0 text-accent" aria-hidden="true" />
+                  <span className="num">{l}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="flex gap-2 text-sm leading-snug">
+              <CalendarClock size={14} className="mt-0.5 shrink-0 text-accent" aria-hidden="true" />
+              <div>
+                <p className="num font-medium text-ink">{homeCopy.briefNext(homeCopy.briefWhen(fmtDate(nextBriefAt(clock))))}</p>
+                <p className="text-xs text-muted">{homeCopy.briefNextNote}</p>
+              </div>
+            </div>
+          )}
         </ScreenCard>
       </ScreenSection>
 
@@ -233,6 +241,7 @@ function ThreadCard({ a, m, approval }: { a: ActionCard; m: Message; approval: b
       </div>
       <p className="mt-1.5 text-sm font-semibold leading-snug text-ink">{approval ? homeCopy.needsApproval(a.title) : a.title}</p>
       <p className="num mt-0.5 text-xs text-ink">{impactText(a.impact)}</p>
+      {isMoneyCard(a) && <p className="mt-0.5 text-[11px] font-medium text-positive">{a.type === 'insure' ? earned.insure : earned.default}</p>}
       <div className="mt-1.5 flex items-center justify-between gap-2">
         <span className={`num min-w-0 truncate text-xs ${status.tone}`}>{status.text}</span>
         <button type="button" onClick={() => openAction(a.id)} className="flex shrink-0 items-center text-xs font-medium text-accent hover:underline">

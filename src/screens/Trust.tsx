@@ -21,7 +21,7 @@ import { fmtAsOf, fmtDate, fmtDateTime, fmtINR, fmtLakh, fmtPct } from '../lib/f
 import { useMunim } from '../store'
 import type { DataSource, Member } from '../types'
 import { caps, consentMonths, consentWarnDays, currentPlan, plans } from './screenData'
-import { consentRenewal, daysBetween, sourceLabel } from './selectors'
+import { consentRenewal, daysBetween, freshAsOf, sourceLabel } from './selectors'
 import { openAction, useUi, type TrustSection } from './uiStore'
 
 const SECTIONS: TrustSection[] = ['members', 'ledger', 'caps', 'data', 'plan']
@@ -329,6 +329,7 @@ function CapCard({ icon, title, value, children }: { icon: ReactNode; title: str
 
 function Data() {
   const members = useMunim((s) => s.members)
+  const clock = useMunim((s) => s.clock)
   const renewed = useUi((s) => s.renewedConsents)
   const renewConsent = useUi((s) => s.renewConsent)
   const showToast = useMunim((s) => s.showToast)
@@ -339,7 +340,7 @@ function Data() {
   const other = visible.filter((d) => d.via !== 'Account Aggregator')
 
   const renew = (d: DataSource) => {
-    renewConsent(d.id, consentRenewal())
+    renewConsent(d.id, consentRenewal(clock))
     showToast(trustCopy.dataRenewedToast(d.name, consentMonths), { tone: 'success' })
   }
 
@@ -351,7 +352,8 @@ function Data() {
         <ul className="divide-y divide-line">
           {aa.map((d) => {
             const expiry = renewed[d.id] ?? d.consentExpiry
-            const days = expiry ? daysBetween(P.AS_OF, expiry) : Infinity
+            // Counted from today on the demo clock: 9 days at the snapshot, expired after Sat 7 Nov.
+            const days = expiry ? daysBetween(clock, expiry) : Infinity
             const warn = days <= consentWarnDays
             const owner = d.memberId ? members.find((m) => m.id === d.memberId) : undefined
             return (
@@ -371,7 +373,7 @@ function Data() {
                     </button>
                   )}
                 </div>
-                <p className="num mt-1 text-xs text-muted">{fmtAsOf(d.freshness)}</p>
+                <p className="num mt-1 text-xs text-muted">{fmtAsOf(freshAsOf(d.freshness, expiry && days <= 0 ? expiry : clock))}</p>
                 {expiry &&
                   (warn ? (
                     <p className="num mt-1 flex flex-wrap items-center gap-x-2 text-xs font-medium text-warning">
@@ -399,7 +401,7 @@ function Data() {
             <li key={d.id} className="px-4 py-3">
               <p className="text-sm font-medium text-ink">{sourceLabel(d)}</p>
               <p className="text-xs text-muted">{d.covers}</p>
-              <p className="num mt-1 text-xs text-muted">{fmtAsOf(d.freshness)}</p>
+              <p className="num mt-1 text-xs text-muted">{fmtAsOf(freshAsOf(d.freshness, clock))}</p>
               <p className="mt-0.5 text-xs text-muted">{d.via === 'Gmail' ? trustCopy.dataGmail : trustCopy.dataSms}</p>
             </li>
           ))}

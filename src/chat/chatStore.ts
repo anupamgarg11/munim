@@ -24,11 +24,17 @@ export interface ChatState {
    * later. It follows the main store's demo clock whenever a moment moves that.
    */
   clockAnchor: { story: number; real: number }
+  /**
+   * Guided mode: the consent request (message id) Dad approves on his own, as if he had
+   * opened it and typed his OTP. Suresh's frame plays it and clears it.
+   */
+  autoConsent: string | null
 
   setTyping: (thread: ThreadId, on: boolean) => void
   setWhatsappOwner: (owner: WhatsAppOwner) => void
   markConsent: (messageId: string) => void
   setStoryClock: (at: string | number) => void
+  setAutoConsent: (messageId: string | null) => void
   resetChat: () => void
 }
 
@@ -40,6 +46,7 @@ const initial = () => ({
   whatsappOwner: 'nikhil' as WhatsAppOwner,
   consentGiven: {} as Record<string, true>,
   clockAnchor: { story: new Date(mainClock()).getTime(), real: Date.now() },
+  autoConsent: null as string | null,
 })
 
 export const useChat = create<ChatState>()((set) => ({
@@ -48,6 +55,7 @@ export const useChat = create<ChatState>()((set) => ({
   setWhatsappOwner: (whatsappOwner) => set({ whatsappOwner }),
   markConsent: (messageId) => set((s) => ({ consentGiven: { ...s.consentGiven, [messageId]: true } })),
   setStoryClock: (at) => set({ clockAnchor: { story: new Date(at).getTime(), real: Date.now() } }),
+  setAutoConsent: (autoConsent) => set({ autoConsent }),
   resetChat: () => set(initial()),
 }))
 

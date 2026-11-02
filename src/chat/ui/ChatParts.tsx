@@ -22,9 +22,11 @@ interface HeaderProps {
   /** When set, the back arrow is a real button (Suresh's frame: back to Nikhil's phone) */
   onBack?: () => void
   backLabel?: string
+  /** A real button on the right, before the decorative icons (the phone layout's commentary "i") */
+  action?: ReactNode
 }
 
-export function ChatHeader({ name, avatar, status, verifiedLabel, onBack, backLabel }: HeaderProps) {
+export function ChatHeader({ name, avatar, status, verifiedLabel, onBack, backLabel, action }: HeaderProps) {
   return (
     <header className="flex h-[60px] shrink-0 items-center gap-1.5 bg-wa-header px-2 text-white">
       {onBack ? (
@@ -47,6 +49,7 @@ export function ChatHeader({ name, avatar, status, verifiedLabel, onBack, backLa
           {status}
         </p>
       </div>
+      {action}
       <span aria-hidden="true" className="flex shrink-0 items-center gap-4 pr-1 text-white/95">
         <Video size={21} />
         <Phone size={19} />

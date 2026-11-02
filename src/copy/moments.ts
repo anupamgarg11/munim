@@ -4,7 +4,7 @@
   Every number arrives as an argument computed by the caller from the live persona, and is
   formatted here with fmtINR, fmtLakh, fmtPct or fmtDate. None is typed.
 */
-import { fmtDate, fmtINR, fmtLakh, fmtPct, type DateInput } from '../lib/format'
+import { fmtDate, fmtINR, fmtLakh, fmtPct, fmtTime, type DateInput } from '../lib/format'
 
 const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve']
 /** 6 -> "six" (up to twelve), else the digits */
@@ -179,6 +179,7 @@ export const m2 = {
     approvalDetail: 'Your tap (no money leaves)',
     when: (doneBy: DateInput, days: number) => `Done by ${fmtDate(doneBy)} (${days} working days)`,
     receipt: (amount: number) => `Switched ${fmtINR(amount)} of regular plans to direct`,
+    effect: (fund: string) => `${fund}: units older than a year switched to the direct plan`,
     timeline: (doneBy: DateInput) => [
       'Switch orders placed with MF Central',
       `Units in the direct plans by ${fmtDate(doneBy)}`,
@@ -231,6 +232,10 @@ export const m3 = {
     railDetail: 'BBPS via UPI',
     approvalDetail: (rule: string) => `None: your rule "${rule}"`,
     receipt: (amount: number, card: string) => `${fmtINR(amount)} to ${card}`,
+    /** SPEC 9.5: the failed run */
+    declined: (time: string) => `Bank declined at ${time}`,
+    failedPing: (what: string, reason: string, retryAt: DateInput) =>
+      `Heads up: ${what} didn't go through. ${reason}; retrying at ${fmtTime(retryAt)}. Nothing else affected.`,
   },
 
   sips: (amount: number, on: DateInput) => `SIPs ${fmtINR(amount)} on ${fmtDate(on)}: already set, nothing to do.`,

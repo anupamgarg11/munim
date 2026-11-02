@@ -49,11 +49,13 @@ export const demoBar = {
   freeExplore: 'Free explore',
   collapse: 'Hide demo controls',
   expand: 'Show demo controls',
+  freeExploreTag: 'Free explore',
   region: 'Demo controls',
 }
 
 export const stage = {
   whatsappCaption: "Nikhil's WhatsApp",
+  sureshCaption: "Suresh's WhatsApp",
   appCaption: 'Munim app',
   viewPhone: 'Phone',
   viewWide: 'Wide',

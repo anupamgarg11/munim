@@ -18,6 +18,7 @@ import { AS_OF, people } from './data/persona'
 import * as A from './lib/actions'
 import { approvers, timeline as timelineCopy } from './copy/cards'
 import { defaultRules } from './demo/rules'
+import { LAPTOP_QUERY } from './lib/useMediaQuery'
 import type {
   ActionCard,
   ActionDraft,
@@ -49,6 +50,8 @@ export interface MunimData {
   freeExplore: boolean
   /** Laptop centre column: phone frame or wide view */
   centreView: CentreView
+  /** The demo bar is folded to a pill (Free explore folds it; the pill unfolds it) */
+  demoCollapsed: boolean
   messages: Message[]
   actions: ActionCard[]
   rules: Rule[]
@@ -87,6 +90,7 @@ export interface MunimSetters {
   setCommentaryOpen: (open: boolean) => void
   setFreeExplore: (on: boolean) => void
   setCentreView: (view: CentreView) => void
+  setDemoCollapsed: (collapsed: boolean) => void
   setMessages: (messages: Message[]) => void
   setActions: (actions: ActionCard[]) => void
   setRules: (rules: Rule[]) => void
@@ -94,7 +98,7 @@ export interface MunimSetters {
   setLedger: (ledger: LedgerEntry[]) => void
   /** On: pauses rules (the flag) and cancels every held action */
   setKillSwitch: (on: boolean) => void
-  /** Back to moment 0 with empty data; keeps layout choices (centre view, commentary) */
+  /** Back to moment 0 with empty data; keeps layout and mode choices (centre view, commentary, free explore, the demo bar) */
   reset: () => void
   /** Item 4: onboarding finished (or skipped by the demo) */
   setConnected: (connected: boolean) => void
@@ -158,10 +162,13 @@ export interface MunimCardActions {
    */
   applyEffects: (effects: Effect[], note?: string) => PersonaData
   /**
-   * Scheduled cards whose date has come (scheduledFor at or before the demo clock) run and
-   * complete now, stamped at their own time: held at scheduledFor, run after the hold.
-   * Autopilot cards stay put while the kill switch is on or their rule is off. The demo
-   * runner calls this after every clock move.
+   * Everything the demo clock has reached, each stamped at its own time:
+   *  - scheduled cards whose date has come: held at scheduledFor, run after the hold;
+   *  - held cards whose hold has ended on the demo clock (holdStartedAt + holdMinutes);
+   *  - failed cards whose retry time has come: retried, then done.
+   * A scripted failure fails the run instead (SPEC 9.5); its retry comes on a later clock
+   * move or on Retry. Autopilot cards stay put while the kill switch is on or their rule is
+   * off. The demo runner calls this after every clock move.
    */
   runDueActions: () => void
 }
@@ -170,13 +177,18 @@ export type MunimState = MunimData & MunimSetters & MunimCardActions
 
 export const clampMoment = (n: number): Moment => Math.min(8, Math.max(0, Math.round(n))) as Moment
 
+/** Commentary starts open where it has room (the laptop panel) and closed on a phone (the "i" sheet). */
+const roomForCommentary = (): boolean =>
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function' ? window.matchMedia(LAPTOP_QUERY).matches : true
+
 export const initialData: MunimData = {
   surface: 'whatsapp',
   tab: 'home',
   moment: 0,
-  commentaryOpen: true,
+  commentaryOpen: roomForCommentary(),
   freeExplore: false,
   centreView: 'phone',
+  demoCollapsed: false,
   messages: [],
   actions: [],
   members: [],
@@ -336,8 +348,10 @@ export const useMunim = create<MunimState>()((set, get) => {
     setTab: (tab) => set({ tab }),
     setMoment: (moment) => set({ moment: clampMoment(moment) }),
     setCommentaryOpen: (commentaryOpen) => set({ commentaryOpen }),
-    setFreeExplore: (freeExplore) => set({ freeExplore }),
+    // Free explore folds the demo bar to a pill; leaving it unfolds the bar.
+    setFreeExplore: (freeExplore) => set({ freeExplore, demoCollapsed: freeExplore }),
     setCentreView: (centreView) => set({ centreView }),
+    setDemoCollapsed: (demoCollapsed) => set({ demoCollapsed }),
     setMessages: (messages) => set({ messages }),
     setActions: (actions) => {
       const found = computeFound(actions)
@@ -361,6 +375,8 @@ export const useMunim = create<MunimState>()((set, get) => {
         ...initialData,
         centreView: s.centreView,
         commentaryOpen: s.commentaryOpen,
+        freeExplore: s.freeExplore,
+        demoCollapsed: s.demoCollapsed,
       }))
     },
     setConnected: (connected) => set({ connected }),
@@ -524,25 +540,58 @@ export const useMunim = create<MunimState>()((set, get) => {
 
     runDueActions: () => {
       const { clock } = get()
-      const due = get()
-        .actions.filter((a) => a.status === 'approved' && a.scheduledFor !== undefined && !A.isAfter(a.scheduledFor, clock))
-        .sort((a, b) => (a.scheduledFor ?? '').localeCompare(b.scheduledFor ?? ''))
-      for (const a of due) {
+      const paused = (a: ActionCard) => {
         const s = get()
         const rule = s.rules.find((r) => r.id === a.ruleId)
-        if (a.approval === 'none' && (s.killSwitch || (rule && !rule.enabled))) continue
-        const at = a.scheduledFor!
-        const held = a.holdMinutes > 0 ? A.hold(a, Date.now(), at) : a
+        return a.approval === 'none' && (s.killSwitch || (rule !== undefined && !rule.enabled))
+      }
+      /** Run a card now, stamped at the end of its hold (or `at`): done, or failed if scripted */
+      const runHeld = (held: ActionCard, at: ISODateTime = clock) => {
         const running = A.run(held, A.runStamp(held, at))
-        if (running === held) continue
-        clearRunTimer(a.id)
+        if (running === held) return
+        clearRunTimer(held.id)
         const runAt = running.timeline[running.timeline.length - 1].at
         if (running.scriptedFailure) {
           const { reason, retryAt } = running.scriptedFailure
           commit(A.fail(running, reason, retryAt, runAt))
-          continue
+          return
         }
         const { card: done, ledger } = A.complete(running, runAt)
+        commit(done, ledger)
+      }
+
+      // 1. Scheduled cards whose date has come: held at their time, run after the hold.
+      const due = get()
+        .actions.filter((a) => a.status === 'approved' && a.scheduledFor !== undefined && !A.isAfter(a.scheduledFor, clock))
+        .sort((a, b) => (a.scheduledFor ?? '').localeCompare(b.scheduledFor ?? ''))
+      for (const a of due) {
+        if (paused(a)) continue
+        const at = a.scheduledFor!
+        if (a.holdMinutes > 0) {
+          const held = A.hold(a, Date.now(), at)
+          // A hold that has not ended on the demo clock keeps counting down in real time.
+          if (A.isAfter(A.addMinutes(at, a.holdMinutes), clock)) {
+            commit(held)
+            get().startHoldTicker()
+          } else runHeld(held)
+        } else runHeld(a, at)
+      }
+
+      // 2. Held cards whose hold ended on the demo clock (the clock moved past it).
+      for (const a of get().actions) {
+        if (a.status !== 'held' || !a.holdStartedAt) continue
+        if (A.isAfter(A.addMinutes(a.holdStartedAt, a.holdMinutes), clock)) continue
+        runHeld(a)
+      }
+
+      // 3. Failed cards whose retry time has come: retried and done at that time.
+      for (const a of get().actions) {
+        if (a.status !== 'failed' || !a.failure || A.isAfter(a.failure.retryAt, clock) || paused(a)) continue
+        const at = a.failure.retryAt
+        const retried = A.retry(a, at)
+        if (retried === a) continue
+        clearRunTimer(a.id)
+        const { card: done, ledger } = A.complete(retried, at)
         commit(done, ledger)
       }
     },

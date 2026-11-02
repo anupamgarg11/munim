@@ -464,6 +464,12 @@ export interface SpendCategory {
  *  'loan'     id = loan id; delta to outstanding (negative when prepaid)
  *  'stocks'   delta to total stock value (market moves)
  *  'member'   id = member account id (e.g. 'suresh-fd'); delta in rupees
+ *  'switch'   id = a regular fund; its units older than a year (worth delta) move to the
+ *             same fund's direct plan (id + '-direct', named `name`): a sale and a buy, so
+ *             the new units start at cost. The newer units stay in the regular plan.
+ *  'sip'      id = the SIP's fund id; delta to its monthly amount. A SIP that reaches zero
+ *             stops; a positive delta on a fund with no SIP starts one on the same day of
+ *             the month as the others (moving a SIP is a minus and a plus).
  *
  * How derived.ts applyEffects reads them (item 4):
  *  'fund' delta > 0 is a purchase: a new lot at cost (gain 0, newer than a year). An unknown id
@@ -477,7 +483,7 @@ export interface SpendCategory {
  *  'member' ids: 'suresh-fd' (FD principal), 'suresh-sbi' (savings balance).
  *  Every touched record's asOf, and the persona's AS_OF, move to the time of the change.
  */
-export type EffectTarget = 'account' | 'card' | 'fund' | 'liquid' | 'loan' | 'stocks' | 'member'
+export type EffectTarget = 'account' | 'card' | 'fund' | 'liquid' | 'loan' | 'stocks' | 'member' | 'sip' | 'switch'
 export interface Effect {
   target: EffectTarget
   id?: string

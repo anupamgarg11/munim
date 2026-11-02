@@ -10,20 +10,18 @@ import {
   fundCost,
   fundGain,
   fundValue,
-  selectCardDues,
   selectEsop,
   selectIdleAboveBuffer,
   selectInvestments,
   selectMonthlySpend,
-  selectNetWorth,
-  selectRegularPlans,
-  selectSipsMonthly,
   selectSubscriptionsMonthly,
+  selectSweep,
   sum,
   type PersonaData,
 } from '../data/derived'
+import { toIST } from '../lib/actions'
 import { fmtDate, fmtINR, fmtLakh, fmtPct, istParts, type DateInput } from '../lib/format'
-import { common, homeCopy, moneyCopy, sourceVia } from '../copy/screens'
+import { common, moneyCopy, sourceVia } from '../copy/screens'
 import type { ActionCard, ActionStatus, ActionType, DataSource, ISODate, ISODateTime, Message, Rupees } from '../types'
 import {
   caps,
@@ -75,10 +73,31 @@ export function clock(msLeft: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
 
+/* ---------- Freshness (SPEC 1.8) ---------- */
+
+const IST_OFFSET_MS = 330 * 60 * 1000
+const msOf = (at: DateInput) => new Date(typeof at === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(at) ? `${at}T12:00:00+05:30` : at).getTime()
+
+/** Sources refresh daily at the snapshot's time of day (9:14 am): the last refresh at or before `clock` */
+export function lastRefresh(clock: ISODateTime): ISODateTime {
+  const snap = istParts(P.AS_OF)
+  const c = istParts(clock)
+  let t = Date.UTC(c.year, c.month, c.day, snap.hour, snap.minute) - IST_OFFSET_MS
+  if (t > msOf(clock)) t -= DAY_MS
+  return toIST(Math.max(t, msOf(P.AS_OF)))
+}
+
+/** What an "as of" line shows: the record's own time or the day's refresh, whichever is later, never after now */
+export function freshAsOf(asOf: ISODateTime, clock: ISODateTime): ISODateTime {
+  const t = Math.max(msOf(asOf), msOf(lastRefresh(clock)))
+  return toIST(Math.min(t, Math.max(msOf(clock), msOf(asOf))))
+}
+
 /* ---------- Live persona (item 4) ---------- */
 
 /** The live persona from the store: balances after every completed card and story event */
 export const usePersona = (): PersonaData => useMunim((s) => s.persona)
+export type { PersonaData }
 
 /* ---------- Sources ---------- */
 
@@ -93,6 +112,20 @@ export function sourceLabel(src: DataSource): string {
 export function idleCallout(p: PersonaData = P) {
   const hdfc = p.banks.find((b) => b.id === p.buffer.accountId)
   return moneyCopy.idleCallout(fmtLakh(selectIdleAboveBuffer(p)), fmtLakh(p.buffer.amount), fmtPct(hdfc?.interestRate ?? p.rates.savings))
+}
+
+/**
+ * After the salary (SPEC 5.3): what is spare in the salary account once the month's
+ * commitments and the buffer are kept, less money already on its way out (held, scheduled or
+ * retrying cards; card bills are already in the commitments).
+ */
+export function spareAfterCommitments(p: PersonaData, actions: readonly ActionCard[]): Rupees {
+  const plan = selectSweep(p, { diwali: diwaliBudget.amount })
+  const leaving = actions
+    .filter((a) => ['approved', 'held', 'running', 'failed'].includes(a.status) && !a.effects?.some((e) => e.target === 'card'))
+    .flatMap((a) => a.effects ?? [])
+    .filter((e) => e.target === 'account' && e.id === p.buffer.accountId && e.delta < 0)
+  return plan.spare - sum(leaving.map((e) => -e.delta))
 }
 
 /* ---------- Funds ---------- */
@@ -202,24 +235,6 @@ export function relatedActions(actions: readonly ActionCard[], matchers: Matcher
 
 /* ---------- Home ---------- */
 
-export function weeklyBrief(p: PersonaData = P) {
-  const nw = selectNetWorth(p)
-  const hdfc = p.banks.find((b) => b.id === p.buffer.accountId)
-  const dues = [...p.cards].sort((a, b) => a.due.localeCompare(b.due))
-  const sipDay = p.sips[0]?.dayOfMonth ?? 5
-  return {
-    when: homeCopy.briefWhen(fmtDate(nextBriefAt(p.AS_OF))),
-    lines: [
-      homeCopy.briefNetWorth(fmtLakh(nw.total), fmtDate(p.AS_OF)),
-      homeCopy.briefIdle(fmtLakh(selectIdleAboveBuffer(p)), fmtLakh(p.buffer.amount), fmtPct(hdfc?.interestRate ?? p.rates.savings)),
-      homeCopy.briefCards(dues.length, fmtINR(selectCardDues(p)), fmtDate(dues[0].due), fmtDate(dues[dues.length - 1].due)),
-      homeCopy.briefSips(fmtINR(selectSipsMonthly(p)), common.ordinal(sipDay)),
-      homeCopy.briefRegular(fmtINR(selectRegularPlans(p).dragPerYear)),
-      homeCopy.briefNothing,
-    ],
-  }
-}
-
 /** Same IST calendar day */
 export const sameDay = (a: DateInput, b: DateInput) => daysBetween(a, b) === 0
 
@@ -292,9 +307,10 @@ const DETAIL: Record<HoldingKind, (id: string, p: PersonaData) => HoldingDetail 
       subtitle: common.mask(c.mask),
       amount: c.statement,
       owed: true,
+      // Paid: no Due row; when it was paid instead.
       facts: [
         { label: F.statement, value: fmtINR(c.statement) },
-        { label: F.due, value: fmtDate(c.due) },
+        c.statement <= 0 ? { label: F.paidOn, value: fmtDate(c.asOf), tone: 'positive' as Tone } : { label: F.due, value: fmtDate(c.due) },
       ],
       source: sourceById(c.sourceId),
       asOf: c.asOf,
@@ -484,6 +500,7 @@ const DETAIL: Record<HoldingKind, (id: string, p: PersonaData) => HoldingDetail 
 
 /* ---------- Consent ---------- */
 
-export function consentRenewal(): ISODate {
-  return addMonths(P.AS_OF, consentMonths)
+/** A renewed consent runs consentMonths from today (the demo clock) */
+export function consentRenewal(clock: ISODateTime): ISODate {
+  return addMonths(clock, consentMonths)
 }

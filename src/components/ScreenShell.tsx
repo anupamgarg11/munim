@@ -3,32 +3,27 @@ import { Trash2 } from 'lucide-react'
 import { useMunim } from '../store'
 import { useUi } from '../screens/uiStore'
 import { trustCopy } from '../copy/screens'
+import { reset } from '../demo/runner'
 import { ScreenLayer } from './ScreenLayer'
-import { ToastHost } from './Toast'
 import { ScreenButton } from './ScreenParts'
 
 /*
-  Wraps every app screen: the overlay layer first (toasts, plus the screen's open sheet),
-  then either the screen or, after "Delete everything", the blank state.
-  ToastHost (item 3) is mounted here because MunimSurface does not mount it yet; if the
-  surface starts mounting it, drop it from here so toasts do not show twice.
+  Wraps every app screen: the overlay layer first (the screen's open sheet), then either the
+  screen or, after "Delete everything", the blank state. Toasts and the UPI PIN sheet are
+  mounted once for the whole app, in MunimSurface.
 */
 export function ScreenShell({ children, overlay }: { children: ReactNode; overlay?: ReactNode }) {
   const deleted = useUi((s) => s.deleted)
   return (
     <>
-      <ScreenLayer>
-        <ToastHost bottom="16px" />
-        {overlay}
-      </ScreenLayer>
+      <ScreenLayer>{overlay}</ScreenLayer>
       {deleted ? <DeletedState /> : children}
     </>
   )
 }
 
-/** SPEC 9.5: after Delete everything, a blank state with "Start again". */
+/** SPEC 9.5: after Delete everything, a blank state with "Start again" (back to the start, in the app). */
 function DeletedState() {
-  const reset = useMunim((s) => s.reset)
   const resetUi = useUi((s) => s.resetUi)
   return (
     <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
@@ -40,7 +35,7 @@ function DeletedState() {
       <ScreenButton
         onClick={() => {
           resetUi()
-          reset()
+          void reset().then(() => useMunim.getState().setSurface('app'))
         }}
       >
         {trustCopy.startAgain}

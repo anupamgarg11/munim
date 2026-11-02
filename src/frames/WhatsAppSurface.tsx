@@ -8,6 +8,7 @@ import type { ConsentEvent } from '../chat/bridge'
 import { MessageView, type OnCardAction } from '../chat/ui/MessageViews'
 import { ChatHeader, Chips, Composer, MessageList, Notice, TypingBubble, useAutoScroll } from '../chat/ui/ChatParts'
 import { SureshFrame } from './SureshFrame'
+import { CommentaryButton } from '../components/CommentarySheet'
 import '../chat/chat.css'
 
 /*
@@ -50,7 +51,13 @@ function NikhilChat({ onAction }: { onAction?: OnCardAction }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <ChatHeader name={chat.contactName} avatar={chat.avatar} status={typing ? chat.typing : chat.online} verifiedLabel={chat.verified} />
+      <ChatHeader
+        name={chat.contactName}
+        avatar={chat.avatar}
+        status={typing ? chat.typing : chat.online}
+        verifiedLabel={chat.verified}
+        action={<CommentaryButton tone="light" />}
+      />
       <div className="wa-doodle flex min-h-0 flex-1 flex-col">
         <div ref={scrollRef} role="log" aria-label={chat.log} className="no-scrollbar min-h-0 flex-1 overflow-y-auto pb-2">
           <Notice>{chat.notice}</Notice>

@@ -38,6 +38,17 @@
   animation-delay: 0.3s;
 }
 
+/* Reduced motion: the dots hold still, readable, instead of blinking */
+@media (prefers-reduced-motion: reduce) {
+  .wa-dot {
+    animation: none;
+    opacity: 0.7;
+  }
+  .wa-flip-inner {
+    transition: none;
+  }
+}
+
 /* Message slide-in, 150 ms (SPEC 8) */
 @keyframes wa-slide-in-left {
   from {

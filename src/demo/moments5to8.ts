@@ -25,7 +25,7 @@ import { useMunim } from '../store'
 import * as P from '../data/persona'
 import { fundGain, fundValue, selectLiquid, selectMonthlySpend, selectNetWorth, sum, type PersonaData } from '../data/derived'
 import { toIST } from '../lib/actions'
-import { answerScript, appendMessage, openInMunim, play, setChipHandler, type ScriptStep } from '../chat/engine'
+import { answerScript, appendMessage, insertMessage, openInMunim, play, setChipHandler, type ScriptStep } from '../chat/engine'
 import { consentKey, onConsentGiven, type ConsentEvent } from '../chat/bridge'
 import { useChat } from '../chat/chatStore'
 import { assumptions, roundTo } from '../chat/facts'
@@ -36,8 +36,8 @@ import { nextBriefAt } from '../screens/selectors'
 import { chatHi, chips as chatChips } from '../copy/chat'
 import { momentTitles } from '../copy/shell'
 import * as C from '../copy/moments5to8'
-import type { MomentContext, MomentDef } from './kit'
-import type { ActionCard, ActionDraft, Effect, Member, Message, MutualFund, Rupees, Scope } from '../types'
+import { autoChips, onClockMove, type MomentContext, type MomentDef } from './kit'
+import type { ActionCard, ActionDraft, Effect, ISODateTime, Member, Message, MutualFund, Rupees, Scope } from '../types'
 
 /* ---------- Inputs (SPEC 5.5 to 5.8) ---------- */
 
@@ -174,6 +174,8 @@ function harvestDraft(p: PersonaData): ActionDraft | null {
   const h = harvestFigures(p)
   if (!h) return null
   const to = HARVEST.to.display
+  // The monthly SIP into the sold fund moves to the new one, same amount, same day.
+  const sip = p.sips.find((x) => x.fundId === HARVEST.fromId)
   return {
     id: HARVEST_ID,
     type: 'harvest',
@@ -182,6 +184,7 @@ function harvestDraft(p: PersonaData): ActionDraft | null {
     lines: [
       { label: C.harvest.sellLine(h.from.name), amount: h.value, note: C.harvest.sellNote({ loss: h.loss, saving: h.saving, rate: HARVEST.stcgRate }) },
       { label: C.harvest.buyLine(to), amount: h.value, note: C.harvest.buyNote },
+      ...(sip ? [{ label: C.harvest.sipLine(to), amount: sip.amount, note: C.harvest.sipNote(sip.dayOfMonth) }] : []),
     ],
     impact: { amount: h.saving, per: 'now', label: C.harvest.impact(h.saving) },
     rail: 'MF Central',
@@ -194,10 +197,20 @@ function harvestDraft(p: PersonaData): ActionDraft | null {
     effects: [
       { target: 'fund', id: h.from.id, delta: -h.value, label: C.harvest.effectSell(h.from.name) },
       { target: 'fund', id: HARVEST.to.id, name: HARVEST.to.name, delta: h.value, label: C.harvest.effectBuy(to) },
+      ...(sip
+        ? ([
+            { target: 'sip', id: HARVEST.fromId, delta: -sip.amount, label: C.harvest.timelineSip(to, sip.amount) },
+            { target: 'sip', id: HARVEST.to.id, delta: sip.amount, label: C.harvest.timelineSip(to, sip.amount) },
+          ] as Effect[])
+        : []),
     ],
     receiptPlan: {
       what: C.harvest.receiptWhat(HARVEST.fromShort, to),
-      timeline: [C.harvest.timelineSold(h.from.name, h.value, h.loss), C.harvest.timelineBought(to, h.value)],
+      timeline: [
+        C.harvest.timelineSold(h.from.name, h.value, h.loss),
+        C.harvest.timelineBought(to, h.value),
+        ...(sip ? [C.harvest.timelineSip(to, sip.amount)] : []),
+      ],
     },
   }
 }
@@ -302,11 +315,37 @@ async function settleMarketFall() {
   }
 }
 
-/* ---------- Weekly brief, Sunday 6 pm (before moment 6) ---------- */
+/**
+ * After the harvest the sold fund is gone, so the buyback's later tranches buy the new fund
+ * instead (their share of each tranche is unchanged).
+ */
+function redirectTranches() {
+  const s = st()
+  const from = P.funds.find((f) => f.id === HARVEST.fromId)
+  for (const a of s.actions) {
+    if (a.status !== 'approved' || !a.scheduledFor) continue
+    if (!a.effects?.some((e) => e.target === 'fund' && e.id === HARVEST.fromId && e.delta > 0)) continue
+    s.upsertAction({
+      ...a,
+      effects: a.effects.map((e) =>
+        e.target === 'fund' && e.id === HARVEST.fromId ? { ...e, id: HARVEST.to.id, name: HARVEST.to.name, label: C.harvest.effectBuy(HARVEST.to.display) } : e,
+      ),
+      lines: a.lines?.map((l) => (from && l.label === from.name ? { ...l, label: HARVEST.to.display } : l)),
+      why: a.why.split(HARVEST.fromShort).join(HARVEST.to.name),
+      timeline: [...a.timeline, { at: s.clock, text: C.harvest.trancheRedirect(HARVEST.fromShort, HARVEST.to.display) }],
+    })
+  }
+}
+
+/* ---------- Weekly brief, Sunday 6 pm ---------- */
+
+/** The Sunday brief before moment 6 (the clock hook below normally posts it already) */
+function ensureBrief() {
+  postBrief(toIST(ms(nextBriefAt(`${CLOCK[5].date}T${CLOCK[5].time}:00+05:30`))))
+}
 
 /** Sunday's brief (SPEC 1.7), put in the thread at its own time if the thread has none for that day */
-function ensureBrief() {
-  const at = toIST(ms(nextBriefAt(`${CLOCK[5].date}T${CLOCK[5].time}:00+05:30`)))
+function postBrief(at: ISODateTime) {
   const day = at.slice(0, 10)
   const s = st()
   if (s.messages.some((m) => m.thread === 'nikhil' && m.kind === 'brief' && m.at.slice(0, 10) === day)) return
@@ -349,10 +388,15 @@ function ensureBrief() {
   ]
   const msg: Message = { id: IDS5to8.brief(day), thread: 'nikhil', kind: 'brief', from: 'munim', at, title: C.brief.title(at), lines }
   // In time order: anything already stamped after Sunday 6 pm stays after it
-  const all = s.messages
-  const i = all.findIndex((m) => ms(m.at) > end)
-  s.setMessages(i < 0 ? [...all, msg] : [...all.slice(0, i), msg, ...all.slice(i)])
+  insertMessage(msg)
 }
+
+// The brief goes out every Sunday at 6 pm: whenever the demo clock passes one, it lands then.
+onClockMove((from, to) => {
+  for (let t = ms(nextBriefAt(from)); t <= ms(to); t += 7 * 86_400_000) {
+    if (t > ms(from)) postBrief(toIST(t))
+  }
+})
 
 /* ---------- Moment 6: Ask anything ---------- */
 
@@ -388,6 +432,10 @@ function setUpCarFund(): ScriptStep[] {
   if (findCard(CAR_FUND_ID)?.status === 'proposed') st().approveAction(CAR_FUND_ID, 'tap')
   return [{ message: { id: 'm6-car-fund-done', kind: 'text', from: 'munim', text: C.carFund.done(a.setAside, a.setAsideFromMonth) } }]
 }
+
+// Guided mode taps these for the viewer (Next, or a few idle seconds): the car question, then
+// "Set up a Car fund"; "Invite Dad"; and "Open Trust centre".
+for (const id of ['m6-chips', 'm6-setup-chip', 'm7-chips', 'm8-chips']) autoChips.add(id)
 
 async function runAskAnything(ctx: MomentContext) {
   ensureBrief()
@@ -522,6 +570,7 @@ function onDone(card: ActionCard) {
   if (card.id === FD_ID) {
     steps.push({ message: { id: 'm7-fd-done-hi', kind: 'text', from: 'munim', thread: 'suresh', text: C.dadFd.doneHi(fdFigures()) }, typing: 600 })
   }
+  if (card.id === HARVEST_ID) redirectTranches()
   if (steps.length) void play(steps, { instant: building })
 }
 
@@ -542,9 +591,11 @@ useMunim.subscribe((s, prev) => {
   }
 
   // Nikhil asks about a car: the plan card goes in before the matcher answers.
+  // (Only a new last message: a brief or a ping inserted earlier in the thread is not a question.)
   if (s.messages !== prev.messages && s.messages.length > prev.messages.length) {
     const m = s.messages[s.messages.length - 1]
-    if (m.thread === 'nikhil' && m.from === 'nikhil' && m.kind === 'text' && matchIntent(m.text).id === 'car') onCarQuestion(m.text)
+    const isNew = prev.messages[prev.messages.length - 1]?.id !== m.id
+    if (isNew && m.thread === 'nikhil' && m.from === 'nikhil' && m.kind === 'text' && matchIntent(m.text).id === 'car') onCarQuestion(m.text)
   }
 
   if (s.actions !== prev.actions) {

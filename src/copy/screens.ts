@@ -4,7 +4,7 @@
   formatted (fmtINR, fmtLakh, fmtDate) from the caller; nothing here types a number
   that the app computes.
 */
-import type { ActionStatus, ActionType, Approval, ConsentStatus, Language, Member, Scope, SourceVia } from '../types'
+import type { ActionStatus, ActionType, ConsentStatus, Language, Member, Scope, SourceVia } from '../types'
 import type { PlanId, SpendCategoryId } from '../screens/screenData'
 import type { TrustSection } from '../screens/uiStore'
 
@@ -56,13 +56,6 @@ export const actionTypeLabel: Record<ActionType, string> = {
   info: 'Info',
 }
 
-export const approvalLabel: Record<Approval, (member?: string) => string> = {
-  none: () => 'Runs within Autopilot',
-  tap: () => 'Your tap',
-  pin: () => 'Your UPI PIN or bank OTP',
-  'member-consent': (member) => (member ? `${member}'s OTP` : "The member's OTP"),
-}
-
 export const statusLabel: Record<ActionStatus, string> = {
   proposed: 'Needs your approval',
   approved: 'Approved, scheduled',
@@ -100,14 +93,9 @@ export const homeCopy = {
 
   briefTitle: 'Weekly brief',
   briefWhen: (date: string) => `${date}, 6 pm`,
-  briefNetWorth: (nw: string, date: string) => `Net worth ${nw}, as of ${date}.`,
-  briefIdle: (idle: string, buffer: string, rate: string) =>
-    `${idle} sits in HDFC above your ${buffer} buffer, earning ${rate}.`,
-  briefCards: (n: number, total: string, first: string, last: string) =>
-    `${n} card bills, ${total} in all, due between ${first} and ${last}.`,
-  briefSips: (amt: string, day: string) => `SIPs of ${amt} go out on the ${day}.`,
-  briefRegular: (drag: string) => `Regular plans cost you ${drag} a year more than direct ones.`,
-  briefNothing: 'Nothing else needs you this week.',
+  /** Before the first Sunday brief has gone out */
+  briefNext: (when: string) => `Next brief: ${when}`,
+  briefNextNote: 'Every Sunday at 6 pm, on WhatsApp and here.',
 
   thread: 'Your chat with Munim ji',
   threadNote: 'The same messages as WhatsApp.',
@@ -136,6 +124,10 @@ export const moneyCopy = {
   bufferLine: (buffer: string, above: string) => `Buffer ${buffer} · ${above} above it`,
   idleCallout: (idle: string, buffer: string, rate: string) =>
     `${idle} sits in HDFC above your ${buffer} buffer, earning ${rate}.`,
+  /** After the salary: the commitment-aware figure (SPEC 5.3) */
+  spareCallout: (spare: string) => `${spare} is spare in HDFC after bills, SIPs, Diwali and your buffer.`,
+  spareSmall: (spare: string) => `Only ${spare} is spare in HDFC after bills, SIPs, Diwali and your buffer. The rest is spoken for.`,
+  spareNone: 'Nothing is spare in HDFC after bills, SIPs, Diwali and your buffer.',
   accountKind: { salary: 'Salary account', savings: 'Savings account' } as Record<'salary' | 'savings', string>,
 
   investments: 'Investments',
@@ -167,6 +159,7 @@ export const moneyCopy = {
   loanTax: (interest: string, section: string) => `${interest} interest this year, deductible under ${section}`,
   cardBills: 'Card bills due',
   cardDue: (date: string) => `Due ${date}`,
+  cardPaid: (date: string) => `Paid on ${date}`,
   owed: (amt: string) => `${amt} owed`,
 
   spending: 'Spending',
@@ -214,6 +207,7 @@ export const moneyCopy = {
     note: 'Note',
     statement: 'Statement',
     due: 'Due',
+    paidOn: 'Paid on',
     plan: 'Plan',
     heldVia: 'Held via',
     extraCost: 'Extra cost over direct',
@@ -302,6 +296,8 @@ export const rulesCopy = {
   killOffNote: 'Pauses every rule and cancels anything held.',
   killButton: 'Pause everything',
   killOnBanner: 'Autopilot is paused. No rule runs until you resume, and held actions were cancelled.',
+  killStrip: 'Autopilot is paused. Nothing runs on its own.',
+  killStripOpen: 'Rules',
   resume: 'Resume Autopilot',
   confirmTitle: 'Pause everything?',
   confirmBody: (rules: number, held: number) =>
@@ -398,7 +394,8 @@ export const trustCopy = {
   dataOther: 'Gmail and SMS',
   dataFor: (name: string) => `For ${name}`,
   dataConsentUntil: (date: string) => `Consent until ${date}`,
-  dataExpiresIn: (days: number) => `Consent expires in ${days} ${days === 1 ? 'day' : 'days'}.`,
+  dataExpiresIn: (days: number) =>
+    days <= 0 ? 'Consent expired. Data from this source has stopped.' : `Consent expires in ${days} ${days === 1 ? 'day' : 'days'}.`,
   dataRenew: 'Renew',
   dataReconsent: 'Re-consent',
   dataRenewedToast: (name: string, months: number) => `${name} consent renewed for ${months} months.`,

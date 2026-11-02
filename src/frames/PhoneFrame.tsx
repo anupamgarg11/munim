@@ -1,8 +1,20 @@
-import { useRef, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { useElementSize } from '../lib/useElementSize'
 import { StatusBar } from '../components/StatusBar'
-import { AS_OF } from '../data/persona'
 import { fmtTime } from '../lib/format'
+import { storyNow, useChat } from '../chat/chatStore'
+
+/** The story's time on the phone's clock: the demo clock, moving on in real time between moments */
+function useStoryTime(): string {
+  const anchor = useChat((s) => s.clockAnchor)
+  const [now, setNow] = useState(() => storyNow())
+  useEffect(() => {
+    setNow(storyNow())
+    const t = setInterval(() => setNow(storyNow()), 10_000)
+    return () => clearInterval(t)
+  }, [anchor])
+  return fmtTime(now, { ampm: false })
+}
 
 /** Screen 390 x 844 (SPEC 8) inside a 12px bezel. */
 export const SCREEN_W = 390
@@ -28,6 +40,7 @@ export function PhoneFrame({ label, statusBackground, statusTone, children }: Pr
   const cellRef = useRef<HTMLDivElement>(null)
   const { width, height } = useElementSize(cellRef)
   const scale = width > 0 && height > 0 ? Math.min(1, width / OUTER_W, height / OUTER_H) : 0
+  const time = useStoryTime()
 
   return (
     <div ref={cellRef} className="flex h-full w-full min-h-0 min-w-0 items-center justify-center">
@@ -43,7 +56,7 @@ export function PhoneFrame({ label, statusBackground, statusTone, children }: Pr
               className="relative flex flex-col overflow-hidden rounded-[44px] bg-card"
               style={{ width: SCREEN_W, height: SCREEN_H, '--safe-bottom': `${HOME_ZONE}px` } as CSSProperties}
             >
-              <StatusBar time={fmtTime(AS_OF, { ampm: false })} background={statusBackground} tone={statusTone} />
+              <StatusBar time={time} background={statusBackground} tone={statusTone} />
               <div className="relative flex min-h-0 flex-1 flex-col">{children}</div>
               {/* Notch */}
               <div aria-hidden="true" className="absolute left-1/2 top-0 h-[30px] w-[160px] -translate-x-1/2 rounded-b-[18px] bg-device" />

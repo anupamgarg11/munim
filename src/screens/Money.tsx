@@ -1,17 +1,18 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
-import { TriangleAlert } from 'lucide-react'
+import { CircleCheck, TriangleAlert } from 'lucide-react'
 import { MoneyRow } from '../components/MoneyRow'
 import { ScreenTitle } from '../components/ScreenTitle'
 import { ScreenShell } from '../components/ScreenShell'
 import { ScreenButton, ScreenCallout, ScreenCard, ScreenSection, ScreenSubhead, ScreenTag } from '../components/ScreenParts'
 import { tabs } from '../copy/shell'
 import { common, moneyCopy } from '../copy/screens'
-import { fundGain, fundValue, selectEsop, selectInvestments, selectNetWorth } from '../data/derived'
+import { SWEEP_STEP, fundGain, fundValue, selectEsop, selectInvestments, selectNetWorth } from '../data/derived'
+import { useMunim } from '../store'
 import { fmtAsOf, fmtDate, fmtINR, fmtLakh, fmtPct } from '../lib/format'
 import { MoneyDetail } from './MoneyDetail'
 import { CategorySheet, MoneySpending } from './MoneySpending'
 import type { SpendTxn } from './screenData'
-import { idleCallout, regularCostPerYear, sipFor, termLine, usePersona } from './selectors'
+import { freshAsOf, idleCallout, regularCostPerYear, sipFor, spareAfterCommitments, termLine, usePersona, type PersonaData } from './selectors'
 import { openTrustData, useUi, type HoldingRef } from './uiStore'
 
 /** SPEC 3.2 and 9.3: net worth, then Cash, Investments, Protection, Loans, Spending; every holding drills in. */
@@ -21,7 +22,7 @@ export function MoneyScreen() {
   const nw = selectNetWorth(P)
   const inv = selectInvestments(P)
   const esop = selectEsop(P)
-  const hdfc = P.banks.find((b) => b.id === P.buffer.accountId)
+  const clock = useMunim((s) => s.clock)
   const detail = useUi((s) => s.moneyDetail)
   const openHolding = useUi((s) => s.openHolding)
   const savedScroll = useUi((s) => s.moneyScrollTop)
@@ -56,7 +57,7 @@ export function MoneyScreen() {
           <p className="text-sm font-medium text-muted">{moneyCopy.netWorth}</p>
           <p className="num text-[32px] font-semibold leading-tight tracking-tight text-ink">{fmtINR(nw.total)}</p>
           <p className="num mt-1 text-xs text-muted">
-            {fmtAsOf(P.AS_OF)} ·{' '}
+            {fmtAsOf(freshAsOf(P.AS_OF, clock))} ·{' '}
             <ScreenButton variant="link" onClick={openTrustData}>
               <span className="text-xs">{moneyCopy.sources}</span>
             </ScreenButton>
@@ -101,7 +102,7 @@ export function MoneyScreen() {
               ))}
             </ul>
           </ScreenCard>
-          {hdfc && hdfc.balance > P.buffer.amount && <ScreenCallout icon={<TriangleAlert size={16} />}>{idleCallout(P)}</ScreenCallout>}
+          <CashCallout p={P} />
         </ScreenSection>
 
         {/* Investments */}
@@ -210,7 +211,7 @@ export function MoneyScreen() {
                 <li key={c.id}>
                   <MoneyRow
                     title={c.name}
-                    subtitle={common.dot(common.mask(c.mask), moneyCopy.cardDue(fmtDate(c.due)))}
+                    subtitle={common.dot(common.mask(c.mask), c.statement <= 0 ? moneyCopy.cardPaid(fmtDate(c.asOf)) : moneyCopy.cardDue(fmtDate(c.due)))}
                     amount={fmtINR(c.statement)}
                     onOpen={() => open({ kind: 'card', id: c.id })}
                   />
@@ -223,5 +224,28 @@ export function MoneyScreen() {
         <MoneySpending open={open} onEdit={setEditing} />
       </div>
     </ScreenShell>
+  )
+}
+
+/**
+ * Under the cash accounts. Before the salary (moment 3): what sits above the buffer. After
+ * it: what is spare once bills, SIPs, Diwali and the buffer are kept (SPEC 5.3), less money
+ * already on its way out.
+ */
+function CashCallout({ p }: { p: PersonaData }) {
+  const moment = useMunim((s) => s.moment)
+  const actions = useMunim((s) => s.actions)
+  const hdfc = p.banks.find((b) => b.id === p.buffer.accountId)
+  if (!hdfc) return null
+  if (moment < 3) {
+    if (hdfc.balance <= p.buffer.amount) return null
+    return <ScreenCallout icon={<TriangleAlert size={16} />}>{idleCallout(p)}</ScreenCallout>
+  }
+  const spare = spareAfterCommitments(p, actions)
+  if (spare >= SWEEP_STEP) return <ScreenCallout icon={<TriangleAlert size={16} />}>{moneyCopy.spareCallout(fmtINR(spare))}</ScreenCallout>
+  return (
+    <ScreenCallout tone="accent" icon={<CircleCheck size={16} />}>
+      {spare > 0 ? moneyCopy.spareSmall(fmtINR(spare)) : moneyCopy.spareNone}
+    </ScreenCallout>
   )
 }

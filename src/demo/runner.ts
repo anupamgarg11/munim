@@ -2,12 +2,16 @@
   The demo runner (SPEC 9.1): Next, Back, Reset, goTo, Skip wait and the URL hash.
 
     next()       the next moment, live (typing and delays). Pressed while one is still
-                 playing, it first fast-forwards that one (nothing you did is lost).
+                 playing, it first fast-forwards that one (nothing you did is lost). In guided
+                 mode (not Free explore) it first plays the current moment's default path
+                 through, visibly (demo/autoplay.ts settleMoment), so a viewer who only
+                 presses Next sees every card signed and done. Moment 1 plays its onboarding
+                 itself. Pressed again while that is under way, it rushes it.
     goTo(n)      rebuild from scratch: reset, replay moments 1..n-1 instantly on their default
                  path (cards approved, holds skipped), then moment n instantly with its cards
                  left for you. Keeps the surface and tab you were on.
     back()       goTo(moment - 1)
-    reset()      moment 0, before onboarding (store.reset and resetChat)
+    reset()      moment 0, before onboarding (store.reset and resetChat); leaves Free explore
     skipWait()   every held card runs now (store.skipWait)
     completeOnboarding()  the app's onboarding finished: connected, Money tab, the reveal
 
@@ -19,10 +23,11 @@
   runner rebuilds to that moment (so a link opens with the story played up to it).
 */
 import { useMunim } from '../store'
-import { configureEngine, engineConfig, resetChat, runIntentMatcher, setChipHandler } from '../chat/engine'
+import { resetChat, runIntentMatcher, setChipHandler, setHurry, whenIdle } from '../chat/engine'
 import { m1 } from '../copy/moments'
-import { disposeWatchers, makeContext, settleDefault, stamp, type MomentDef } from './kit'
+import { clockMoved, disposeWatchers, makeContext, settleDefault, stamp, type MomentDef } from './kit'
 import { getMoment, lastMoment, moments, revealSteps } from './moments'
+import { playOnboarding, setRunnerBusy, settleMoment, startDirector, stopOnboarding } from './autoplay'
 import { useDemo } from './state'
 
 let chain: Promise<unknown> = Promise.resolve()
@@ -30,11 +35,31 @@ let chain: Promise<unknown> = Promise.resolve()
 let live: Promise<unknown> | null = null
 /** The runner is moving the moment itself (so the store subscription below ignores it) */
 let moving = false
+/** Operations queued or running */
+let ops = 0
 
 function enqueue(fn: () => Promise<void>): Promise<void> {
-  const p = chain.then(fn, fn).catch((err) => console.error('Demo runner', err))
+  ops++
+  setRunnerBusy(true)
+  const run = async () => {
+    // A fresh operation plays at normal speed (an earlier one may have been rushed).
+    setHurry(false)
+    try {
+      await fn()
+    } finally {
+      ops--
+      if (ops === 0) setRunnerBusy(false)
+    }
+  }
+  const p = chain.then(run, run).catch((err) => console.error('Demo runner', err))
   chain = p
   return p
+}
+
+/** A viewer's request (Next, Back, Reset): rush whatever is under way, then queue it. */
+function request(fn: () => Promise<void>): Promise<void> {
+  if (ops > 0) setHurry(true)
+  return enqueue(fn)
 }
 
 const st = () => useMunim.getState()
@@ -48,9 +73,12 @@ function quietly(fn: () => void) {
   }
 }
 
-/** Clock to the moment's time, run what has come due, set the moment */
+/** Clock to the moment's time (Sunday's brief lands if it passed), run what has come due, set the moment */
 function enter(def: MomentDef) {
-  st().setClock(stamp(def.date, def.time))
+  const from = st().clock
+  const to = stamp(def.date, def.time)
+  st().setClock(to)
+  clockMoved(from, to)
   st().runDueActions()
   quietly(() => st().setMoment(def.n))
 }
@@ -62,15 +90,14 @@ function track(p: Promise<unknown>) {
   })
 }
 
-/** Finish the live moment now: no typing, no gaps, then restore the timing. */
+/** Finish the live moment and anything still typing now: every wait ends at once, nothing is skipped. */
 async function fastForward() {
-  if (!live) return
-  const saved = { typingMs: engineConfig.typingMs, gapMs: engineConfig.gapMs }
-  configureEngine({ typingMs: 0, gapMs: 0 })
+  setHurry(true)
   try {
-    await live
+    if (live) await live
+    await whenIdle()
   } finally {
-    configureEngine(saved)
+    setHurry(false)
   }
 }
 
@@ -96,17 +123,24 @@ async function rebuild(target: number) {
 /* ---------- Public ---------- */
 
 export function next(): Promise<void> {
-  return enqueue(async () => {
+  return request(async () => {
     await fastForward()
     const def = getMoment(st().moment + 1)
     if (!def) return
+    // Guided mode: the current moment's default path first, so nothing is left unsigned.
+    if (!st().freeExplore) await settleMoment()
     enter(def)
-    track(def.run(makeContext(def, false)).catch((err) => console.error(`Moment ${def.n}`, err)))
+    const run = def.run(makeContext(def, false)).catch((err) => console.error(`Moment ${def.n}`, err))
+    // Moment 1 in guided mode: the onboarding steps itself until the viewer takes over.
+    const onboarding = def.n === 1 && !st().freeExplore && !st().connected ? playOnboarding() : Promise.resolve()
+    track(Promise.all([run, onboarding]))
   })
 }
 
-export function goTo(n: number, opts: { keepView?: boolean } = {}): Promise<void> {
-  return enqueue(async () => {
+export function goTo(n: number, opts: { keepView?: boolean; leaveFreeExplore?: boolean } = {}): Promise<void> {
+  stopOnboarding()
+  return request(async () => {
+    if (opts.leaveFreeExplore) st().setFreeExplore(false)
     const keepView = opts.keepView ?? true
     const { surface, tab } = st()
     await rebuild(Math.max(0, Math.min(Math.round(n), lastMoment())))
@@ -119,7 +153,7 @@ export function goTo(n: number, opts: { keepView?: boolean } = {}): Promise<void
 
 export const back = (): Promise<void> => goTo(st().moment - 1)
 
-export const reset = (): Promise<void> => goTo(0, { keepView: false })
+export const reset = (): Promise<void> => goTo(0, { keepView: false, leaveFreeExplore: true })
 
 export const skipWait = () => st().skipWait()
 
@@ -145,6 +179,9 @@ setChipHandler(m1.showMe, ({ label, thread }) => {
   if (st().moment === 1) void next()
   else void runIntentMatcher(label, thread)
 })
+
+// Guided mode for an idle viewer: primary chips tapped, Dad approving on his phone.
+startDirector()
 
 // The hash (or anything else) moved the moment: rebuild the story to it. Deferred so a
 // hash applies its surface and tab first, which the rebuild keeps.

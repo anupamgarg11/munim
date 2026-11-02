@@ -671,5 +671,98 @@ section('Store: the live persona moves with completed cards')
   st().stopHoldTicker()
 }
 
+/* ---------- Item 6: the demo clock runs held and failed cards; SIPs move; the top-up cap ---------- */
+section('Demo clock: held cards, failed bills, retries (SPEC 9.2, 9.5)')
+{
+  const st = () => useMunim.getState()
+  const get = (id: string) => st().actions.find((a) => a.id === id)!
+  st().reset()
+  st().setClock('2026-10-30T00:14:00+05:30')
+  st().proposeAction(draft('clock-sweep', { approval: 'none', ruleId: 'sweep-spare', amount: 100_000, impact: { amount: 6_800, per: 'year' } }))
+  st().approveAction('clock-sweep', 'rule')
+  check('Sweep held in real time', get('clock-sweep').status, 'held')
+  st().runDueActions()
+  check('Still held while the demo clock has not passed the hold', get('clock-sweep').status, 'held')
+  st().setClock('2026-11-03T10:40:00+05:30')
+  st().runDueActions()
+  check('A later moment runs it: done', get('clock-sweep').status, 'done')
+  check('Done at the end of its hold (00:24), not at the new clock', get('clock-sweep').receipts[0]?.at, '2026-10-30T00:24:00+05:30')
+
+  st().proposeAction(
+    draft('clock-magnus', {
+      type: 'pay',
+      approval: 'none',
+      ruleId: 'pay-cards',
+      amount: 31_200,
+      scheduledFor: '2026-11-12T02:00:00+05:30',
+      scriptedFailure: { reason: 'Bank declined at 02:10', retryAt: '2026-11-12T10:00:00+05:30' },
+    }),
+  )
+  st().approveAction('clock-magnus', 'rule')
+  st().setClock('2026-11-12T09:00:00+05:30')
+  st().runDueActions()
+  check('Magnus bill fails on its date', get('clock-magnus').status, 'failed')
+  check('Failure line', get('clock-magnus').timeline.at(-1)?.text, 'Bank declined at 02:10; retrying at 10:00 am. Nothing else affected.')
+  check('Failed run stamped 02:10', get('clock-magnus').timeline.at(-1)?.at, '2026-11-12T02:10:00+05:30')
+  st().runDueActions()
+  check('Before 10:00 it stays failed', get('clock-magnus').status, 'failed')
+  st().setClock('2026-11-12T10:30:00+05:30')
+  st().runDueActions()
+  check('The next clock move past 10:00 retries it: done', get('clock-magnus').status, 'done')
+  check('Retried and done at 10:00', get('clock-magnus').receipts[0]?.at, '2026-11-12T10:00:00+05:30')
+
+  st().reset()
+  st().stopHoldTicker()
+}
+
+section('SIP effect and the top-up cap')
+{
+  const base = basePersona()
+  const at = '2026-11-06T09:20:00+05:30'
+  const moved = applyEffects(
+    base,
+    [
+      { target: 'sip', id: 'mirae-midcap', delta: -10_000 },
+      { target: 'sip', id: 'kotak-emerging-direct', delta: 10_000 },
+    ],
+    at,
+  )
+  check('SIP moved: Mirae stops', moved.sips.some((x) => x.fundId === 'mirae-midcap'), false)
+  check('SIP moved: Kotak 10,000 on the 5th', moved.sips.find((x) => x.fundId === 'kotak-emerging-direct')?.dayOfMonth, 5)
+  check('SIPs still 45,000 a month', selectSipsMonthly(moved), 45_000)
+
+  // Card B: the older units of each regular fund switch to its direct plan
+  const switched = applyEffects(
+    base,
+    [
+      { target: 'switch', id: 'hdfc-flexi-reg', delta: 510_000, name: 'HDFC Flexi Cap' },
+      { target: 'switch', id: 'axis-bluechip-reg', delta: 230_000, name: 'Axis Bluechip' },
+    ],
+    at,
+  )
+  check('Switch: regular plans left = 3,60,000', selectRegularPlans(switched).value, 360_000)
+  check('Switch: drag falls to 2,880 a year until March', selectRegularPlans(switched).dragPerYear, 2_880)
+  check('Switch: HDFC Flexi Cap direct = 5,10,000', fundValue(switched.funds.find((f) => f.id === 'hdfc-flexi-reg-direct')!), 510_000)
+  check('Switch: net worth unchanged', selectNetWorth(switched).total, selectNetWorth(base).total)
+
+  // Card A and the sweep skipped: the liquid fund is empty, the gap is the whole 4,50,000.
+  const skipped = applyEffects(base, [{ target: 'account', id: 'hdfc', delta: esop.net }], at)
+  const inputs = {
+    prepay: 200_000,
+    loanId: 'sbi-edu',
+    emergencyMonths: 6,
+    tranches: 3,
+    split: [
+      { fundId: 'ppfas', share: 0.5 },
+      { fundId: 'uti-nifty', share: 0.35 },
+      { fundId: 'mirae-midcap', share: 0.15 },
+    ],
+  }
+  const capped = selectEsopSplit(skipped, { ...inputs, topUpMaxShare: 0.4 })
+  check('Off path: top-up capped at 40% of the buyback, rounded down to 10,000 (2,50,000)', capped.topUp, 250_000)
+  check('Off path: the rest still invests (1,90,000)', capped.rest, 190_000)
+  check('Without the cap it would take 4,40,000', selectEsopSplit(skipped, inputs).topUp, 440_000)
+}
+
 console.log(`\n${failed === 0 ? 'ALL PASS' : 'FAILURES'}: ${passed} passed, ${failed} failed`)
 process.exit(failed === 0 ? 0 : 1)

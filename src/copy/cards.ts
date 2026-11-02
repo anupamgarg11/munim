@@ -68,7 +68,7 @@ export const when = {
 /** Shown on every money card (SPEC 1.5) */
 export const earned = {
   default: 'We earned ₹0 on this.',
-  insure: "We earn ₹0; you'd pay the same at the insurer.",
+  insure: "We earned ₹0 on this; you'd pay the same at the insurer.",
 }
 
 export const alsoConsidered = 'Also considered'
@@ -184,6 +184,7 @@ export const found = {
 /* ---------- Toasts ---------- */
 
 export const toasts = {
+  autopilotPaused: 'Autopilot is paused. Resume it in Rules to run this.',
   cancelled: 'Cancelled. Nothing moved.',
   skipped: 'Skipped. It will not count.',
   sentToMember: (name: string) => `Sent to ${name}'s phone for approval.`,

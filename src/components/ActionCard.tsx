@@ -400,7 +400,15 @@ function PrimaryActions({ card, full, memberName, receiptOpen, onToggleReceipt }
         )
       } else {
         primary = (
-          <button type="button" onClick={() => approveAction(card.id, 'tap')} className={BTN_PRIMARY}>
+          <button
+            type="button"
+            onClick={() => {
+              approveAction(card.id, 'tap')
+              // An Autopilot card under a paused rule (or the kill switch) cannot run: say so.
+              if (useMunim.getState().actions.find((a) => a.id === card.id)?.status === 'proposed') showToast(toasts.autopilotPaused, { tone: 'warning' })
+            }}
+            className={BTN_PRIMARY}
+          >
             {buttons.approve}
           </button>
         )
